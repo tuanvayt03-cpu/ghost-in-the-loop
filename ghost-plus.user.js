@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Ghost in the Loop +
 // @namespace    https://github.com/tuanvayt03-cpu/ghost-in-the-loop
-// @version      9.0.0-alpha.2+ghostplus.2
-// @description  Ghost in the Loop with Vietnamese UI, light theme, collapsible panel and fail-closed liveness watchdog.
+// @version      9.0.0-alpha.2+ghostplus.3
+// @description  Ghost in the Loop with safe Vietnamese UI, light theme, collapsible panel and fail-closed liveness watchdog.
 // @author       Michael S (CTRL-AI) + tuanvayt03-cpu
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -20,7 +20,7 @@
 // @match        https://duck.ai/*
 // @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/main/ghost-in-the-loop.user.js
 // @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/main/ghost-plus-companion.js
-// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/main/ghost-plus-vi.js
+// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/main/ghost-plus-ui-vi-safe.js
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_setClipboard

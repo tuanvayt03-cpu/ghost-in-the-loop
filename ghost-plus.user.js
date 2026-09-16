@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Ghost in the Loop +
 // @namespace    https://github.com/tuanvayt03-cpu/ghost-in-the-loop
-// @version      9.0.0-alpha.2+ghostplus.9
-// @description  Ghost in the Loop with busy-aware smart watchdog, soft turn budget, chat-aware notifications, context hard-stop, web-error recovery, light theme and AoA help.
+// @version      9.0.0-alpha.2+ghostplus.10
+// @description  Ghost in the Loop with busy-aware smart watchdog, core busy gate, soft turn budget, chat-aware notifications, context hard-stop, web-error recovery, light theme and AoA help.
 // @author       Michael S (CTRL-AI) + tuanvayt03-cpu
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -22,6 +22,7 @@
 // @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/main/ghost-plus-turn-budget.js
 // @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/main/ghost-in-the-loop.user.js
 // @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/main/ghost-plus-companion-v2.js
+// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/main/ghost-plus-core-busy-gate.js
 // @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/main/ghost-plus-context-boundary.js
 // @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/main/ghost-plus-web-recovery.js
 // @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/main/ghost-plus-ui-vi-safe.js

@@ -6,13 +6,14 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ companion in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.4`.
+Current loader version: `9.0.0-alpha.2+ghostplus.5`.
 
 ## Added behavior
 
 - Light, translucent Ghost panel theme.
 - Collapse button that reduces the panel to a 46x46 ghost icon at the same top-right position; click the icon to restore.
 - Safe Vietnamese labels are visual-only CSS. No translation MutationObserver and no ChatGPT DOM rewrite loop.
+- Watchdog controls themselves are rendered directly in Vietnamese by the companion, avoiding label-rewrite conflicts.
 - Adaptive liveness watchdog with Off / 3 / 5 / 10 / 15 / 25 minute thresholds. Default: 5 minutes.
 - Progress is tracked separately from assistant text, tool/status UI and turn-count/generation-state changes.
 - 30-second rescue grace window after the silence threshold. Any fresh progress resets the watchdog.

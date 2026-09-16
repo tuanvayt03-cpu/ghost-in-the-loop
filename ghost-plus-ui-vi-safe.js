@@ -48,7 +48,7 @@ style.textContent = `
 #ghostplus-watch b { font-size: 0 !important; }
 #ghostplus-watch b::after { content: "Theo dõi"; font-size: 10px; }
 #ghostplus-watch label { font-size: 0 !important; }
-#ghostplus-watch label::after { content: " tự dừng khi treo"; font-size: 10px; }
+#ghostplus-watch label::after { content: " tự khôi phục khi treo"; font-size: 10px; }
 #ghostplus-watch label input { font-size: 10px !important; }
 `;
 (document.head || document.documentElement).appendChild(style);

@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.9`.
+Current loader version: `9.0.0-alpha.2+ghostplus.10`.
 
 ## Added behavior
 
@@ -18,12 +18,13 @@ Current loader version: `9.0.0-alpha.2+ghostplus.9`.
 - Hard `CONTEXT_TOO_LONG` boundary: Ghost controller stops, no retry/recovery/reload is attempted, and the operator must hand off to a new chat manually.
 - Web Error Supervisor for `PLAY-SEND-UNCERTAIN`, send timeout, network/generation errors, rate limits and auth failures.
 - Busy-aware smart watchdog replaces the legacy silence-only watchdog.
+- Core busy gate protects the upstream Ghost loop when ChatGPT is still reasoning/tool-running but the current UI no longer matches the upstream Stop selector.
 
 ## Busy-aware smart watchdog
 
 Default idle timeout: 5 minutes. Recovery budget: 2 attempts.
 
-The watchdog now classifies ChatGPT as `BUSY_CONFIRMED` when any strong or supporting evidence shows active work, including:
+The watchdog classifies ChatGPT as `BUSY_CONFIRMED` when any strong or supporting evidence shows active work, including:
 
 - a visible ChatGPT Stop control;
 - a square/Stop composer action replacing Send;
@@ -48,6 +49,15 @@ When BUSY evidence disappears:
 5. only then stage a `WATCHDOG RECOVERY STATUS PROBE` through Ghost's own Play/send-once path.
 
 The recovery probe requires fresh conversation plus machine/tool evidence and internally classifies the state as `RESUMABLE`, `BLOCKED`, `COMPLETE`, or `UNKNOWN_SIDE_EFFECT`. `UNKNOWN_SIDE_EFFECT` explicitly forbids blind replay/resend/retry.
+
+## Core busy gate
+
+The upstream Ghost runtime has its own `generating()` selector set. ChatGPT Web can change its composer/Stop UI before upstream Ghost is updated. If Ghost+ sees a live pending reasoning/tool state but upstream Ghost cannot see a native Stop control, the core busy gate creates a 1px off-screen sentinel matching Ghost's reviewed Stop selector.
+
+- The sentinel is only present while Ghost is `RUNNING`, or `PAUSED + UNCERTAIN`, and a real pending state is visible.
+- It is removed immediately when a native Stop control appears or the inferred BUSY state ends.
+- It has no click handler, is outside the visible page, and never sends or stops anything.
+- Its only purpose is to make upstream Ghost keep treating the current turn as generating, preventing protocol-reground/continuation from firing in the middle of a live tool/reasoning run.
 
 ## Web-error recovery
 

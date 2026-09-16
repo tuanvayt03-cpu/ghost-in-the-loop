@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Ghost in the Loop +
 // @namespace    https://github.com/tuanvayt03-cpu/ghost-in-the-loop
-// @version      9.0.0-alpha.2+ghostplus.11
-// @description  Ghost in the Loop with busy-aware smart watchdog, core busy gate, safe soft turn budget, chat-aware notifications, context hard-stop, web-error recovery, light theme and AoA help.
+// @version      9.0.0-alpha.2+ghostplus.12
+// @description  Ghost in the Loop with busy-aware smart watchdog, core busy gate, safe soft turn budget, chat-aware deduplicated notifications, context hard-stop, web-error recovery, light theme and AoA help.
 // @author       Michael S (CTRL-AI) + tuanvayt03-cpu
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*

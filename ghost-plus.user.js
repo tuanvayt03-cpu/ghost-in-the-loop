@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Ghost in the Loop +
 // @namespace    https://github.com/tuanvayt03-cpu/ghost-in-the-loop
-// @version      9.0.0-alpha.2+ghostplus.4
+// @version      9.0.0-alpha.2+ghostplus.5
 // @description  Ghost in the Loop with safe Vietnamese UI, adaptive liveness watchdog, recovery status probe, light theme and collapsible panel.
 // @author       Michael S (CTRL-AI) + tuanvayt03-cpu
 // @match        https://chatgpt.com/*

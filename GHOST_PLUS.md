@@ -6,58 +6,71 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.7`.
+Current loader version: `9.0.0-alpha.2+ghostplus.9`.
 
 ## Added behavior
 
 - Light, translucent Ghost panel theme.
 - Collapse button that reduces the panel to a 46x46 ghost icon at the same top-right position; click the icon to restore.
-- Safe Vietnamese labels are visual-only CSS. No translation MutationObserver and no ChatGPT DOM rewrite loop.
-- Watchdog controls themselves are rendered directly in Vietnamese by the companion, avoiding label-rewrite conflicts.
-- Adaptive liveness watchdog with Off / 3 / 5 / 10 / 15 / 25 minute thresholds. Default: 5 minutes.
-- Progress is tracked separately from assistant text, tool/status UI and turn-count/generation-state changes.
-- 30-second rescue grace window after the silence threshold. Any fresh progress resets the watchdog.
-- Recovery budget defaults to 2 consecutive recoveries and prevents blind retry of the same unchanged state.
-- Optional operator correction can be queued and injected into the next watchdog recovery probe.
-- Web Error Supervisor detects paused `PLAY-SEND-UNCERTAIN` plus known ChatGPT send/network/generation errors even when the normal running watchdog is no longer active.
-- Web Error Supervisor never auto-clicks the ChatGPT `Retry / Thử lại` control for an uncertain request.
-- Recoverable paused web errors are reconciled through a fresh `WEB RECOVERY STATUS PROBE`, not by replaying the previous continuation.
-- `RATE_LIMIT` and `AUTH_ERROR` remain fail-closed instead of creating more requests.
-- Automatic updates are exposed through Tampermonkey `@updateURL` / `@downloadURL` metadata.
+- Safe Vietnamese labels without a page-wide translation MutationObserver.
+- Chat-aware desktop notifications: Ghost+ popup titles include the active conversation name when it can be resolved safely.
+- Soft turn budget, default 20 minutes. It only injects planning/checkpoint guidance; it never stops an active turn.
+- Hard `CONTEXT_TOO_LONG` boundary: Ghost controller stops, no retry/recovery/reload is attempted, and the operator must hand off to a new chat manually.
+- Web Error Supervisor for `PLAY-SEND-UNCERTAIN`, send timeout, network/generation errors, rate limits and auth failures.
+- Busy-aware smart watchdog replaces the legacy silence-only watchdog.
 
-## Running-turn recovery state machine
+## Busy-aware smart watchdog
 
-1. Ghost must already be `RUNNING` and not `UNCERTAIN`.
-2. No real progress is observed for the configured silence threshold.
-3. Ghost+ waits another 30 seconds as a rescue grace window.
-4. If ChatGPT is already idle, Ghost+ does **not** click Stop and proceeds directly to reconciliation.
-5. If ChatGPT still exposes an active generation, a new user prompt cannot be sent concurrently. When `cho phép Stop turn treo` is enabled, Ghost+ requires exactly one reviewed ChatGPT Stop control, clicks it once, and verifies generation actually stopped. If Stop is disabled or ambiguous, recovery fails closed.
-6. Ghost+ freezes the normal Ghost loop to avoid two writers/controllers racing.
-7. Ghost+ stages a `WATCHDOG RECOVERY STATUS PROBE` and restarts through Ghost's own Play / `sendOnce()` path.
-8. The probe requires fresh conversation + machine/tool evidence and internally classifies the state as `RESUMABLE`, `BLOCKED`, `COMPLETE`, or `UNKNOWN_SIDE_EFFECT`.
-9. `UNKNOWN_SIDE_EFFECT` explicitly forbids replay/resend/retry until evidence reconciles the outcome. If certainty cannot be restored, Ghost must request human input.
+Default idle timeout: 5 minutes. Recovery budget: 2 attempts.
 
-Stop is therefore a transport-recovery action only. It is never treated as task completion.
+The watchdog now classifies ChatGPT as `BUSY_CONFIRMED` when any strong or supporting evidence shows active work, including:
 
-## Paused web-error recovery state machine
+- a visible ChatGPT Stop control;
+- a square/Stop composer action replacing Send;
+- visible pending states such as `Đang suy nghĩ`, `Đang truy vấn`, `Thinking`, `Searching`, `Processing`, tool execution, etc.;
+- visible `aria-busy=true` regions;
+- visible progress/spinner state in the chat area.
 
-This path handles cases such as ChatGPT showing `Đã hết thời gian chờ gửi tin nhắn. Vui lòng thử lại.` while Ghost has already paused with `PLAY-SEND-UNCERTAIN`.
+While `BUSY_CONFIRMED`:
 
-1. Scan visible ChatGPT error/alert/toast/retry UI and normalize it to `SEND_TIMEOUT`, `NETWORK_ERROR`, `GENERATION_ERROR`, `RATE_LIMIT`, or `AUTH_ERROR`.
-2. `PLAY-SEND-UNCERTAIN` is itself a recoverable supervisor condition even when no recognizable error banner is present.
-3. Wait a short settle window so transient UI changes can resolve naturally.
-4. Do **not** click the old ChatGPT `Retry / Thử lại` button and do **not** resend the previous continuation.
-5. If ChatGPT is still generating, leave the event to the normal running-turn watchdog; the paused web-error supervisor does not click ChatGPT Stop.
-6. If the composer contains an operator draft, fail closed and do not overwrite it.
-7. Reset only Ghost's internal uncertain latch through Ghost's own `Dừng` control. This does not click ChatGPT's Stop-generating button.
-8. Stage a fresh `WEB RECOVERY STATUS PROBE` and start it through Ghost's own Play/send-once path.
-9. The status probe requires fresh conversation plus fresh machine/tool evidence and classifies the state as `RESUMABLE`, `BLOCKED`, `COMPLETE`, or `UNKNOWN_SIDE_EFFECT` before safe continuation.
-10. A recovery probe is attempted at most once per continuous fault episode. If its delivery cannot be confirmed, Ghost+ does not automatically resend it.
-11. `RATE_LIMIT` causes backoff/pause and `AUTH_ERROR` requires human correction; neither is auto-probed repeatedly.
+- the idle watchdog is locked;
+- `suspectAt` is cleared;
+- no recovery prompt is sent;
+- ChatGPT Stop is never clicked by the smart watchdog;
+- after 10 minutes without meaningful text/tool/status change, Ghost+ only emits a warning notification. It still does not stop/recover the turn.
+
+When BUSY evidence disappears:
+
+1. wait a 5-second post-generation settle window;
+2. start the configured idle watchdog only after that settle window;
+3. if the page stays genuinely IDLE past the threshold, wait an additional 30-second rescue grace window;
+4. re-check BUSY immediately before recovery;
+5. only then stage a `WATCHDOG RECOVERY STATUS PROBE` through Ghost's own Play/send-once path.
+
+The recovery probe requires fresh conversation plus machine/tool evidence and internally classifies the state as `RESUMABLE`, `BLOCKED`, `COMPLETE`, or `UNKNOWN_SIDE_EFFECT`. `UNKNOWN_SIDE_EFFECT` explicitly forbids blind replay/resend/retry.
+
+## Web-error recovery
+
+Paused `PLAY-SEND-UNCERTAIN` and explicit ChatGPT web errors are handled separately from liveness monitoring.
+
+- Never auto-click the old `Retry / Thử lại` control for an uncertain request.
+- Never replay the previous continuation blindly.
+- Recoverable paused web errors use a fresh `WEB RECOVERY STATUS PROBE`.
+- `RATE_LIMIT` backs off; `AUTH_ERROR` requires human correction.
+- At most one web-recovery attempt is made per continuous fault episode.
+
+## Context-too-long boundary
+
+When ChatGPT reports that the conversation/context is too long or has reached its maximum length:
+
+- Ghost controller is stopped;
+- no status probe is sent;
+- no reload/retry is attempted;
+- the UI and desktop notification say that a new chat + manual handoff is required.
 
 ## Safety
 
-The companion and web supervisor never edit local files, call shell commands, or access secrets. They do not blindly resend prompts. Ambiguous Stop/Send state remains fail-closed. A non-empty user draft is never overwritten by automatic recovery.
+Ghost+ does not edit local files, call shell commands, access secrets, or blindly resend prompts. A non-empty operator draft is never overwritten by automatic recovery. Busy state, web errors, and context-limit boundaries are separate state machines so they cannot legally trigger the same recovery path at the same time.
 
 ## Tampermonkey install
 

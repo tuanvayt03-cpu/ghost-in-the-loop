@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Ghost in the Loop +
 // @namespace    https://github.com/tuanvayt03-cpu/ghost-in-the-loop
-// @version      9.0.0-alpha.2+ghostplus.12
+// @version      9.0.0-alpha.2+ghostplus.13
 // @description  Ghost in the Loop with busy-aware smart watchdog, core busy gate, safe soft turn budget, chat-aware deduplicated notifications, context hard-stop, web-error recovery, light theme and AoA help.
 // @author       Michael S (CTRL-AI) + tuanvayt03-cpu
 // @match        https://chatgpt.com/*
@@ -18,7 +18,7 @@
 // @match        https://chat.qwen.ai/*
 // @match        https://poe.com/*
 // @match        https://duck.ai/*
-// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/main/ghost-plus-notify-context.js
+// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/8bad14b6f6281db0588b0d7358d4c18280abae59/ghost-plus-notify-context.js
 // @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/main/ghost-plus-turn-budget-v2.js
 // @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/main/ghost-in-the-loop.user.js
 // @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/main/ghost-plus-companion-v2.js

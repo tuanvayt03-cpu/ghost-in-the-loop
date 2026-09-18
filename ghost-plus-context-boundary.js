@@ -75,13 +75,22 @@ function stopGhostForBoundary(text) {
   } catch (_) {}
 
   ensureUi(text);
+  let gated = false;
   try {
-    GM_notification?.({
-      title: 'Ghost+ · đoạn chat quá dài',
-      text: 'Ghost đã STOP. Không retry/recovery trong chat này. Cần mở chat mới và handoff thủ công.',
-      timeout: 12000
-    });
+    if (window.__ghostPlusSupervisor?.lock) {
+      window.__ghostPlusSupervisor.lock('CONTEXT_BOUNDARY', { reason:text || 'Context limit reached; manual handoff to a new chat is required.' });
+      gated = true;
+    }
   } catch (_) {}
+  if (!gated) {
+    try {
+      GM_notification?.({
+        title: 'Ghost+ · đoạn chat quá dài',
+        text: 'Ghost đã STOP. Không retry/recovery trong chat này. Cần mở chat mới và handoff thủ công.',
+        timeout: 12000
+      });
+    } catch (_) {}
+  }
 }
 function sample() {
   const text = findBoundary();

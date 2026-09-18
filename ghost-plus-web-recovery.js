@@ -241,9 +241,12 @@ async function sendRecoveryProbe(snap) {
     const msg = snap.error.type === 'RATE_LIMIT'
       ? 'Phát hiện rate limit. Ghost+ không tự gửi thêm request; cần chờ/backoff.'
       : 'Phát hiện lỗi xác thực. Ghost+ không tự recovery; cần người dùng xử lý đăng nhập/quyền.';
-    signal(snap.error.type, snap.error.type === 'AUTH_ERROR' ? 'critical' : 'warning',
-      'Ghost+ web supervisor', msg, { group:'hard-error', reason:snap.error.text || msg });
-    notice('Ghost+ web supervisor', msg);
+    if (snap.error.type === 'AUTH_ERROR' && window.__ghostPlusSupervisor?.lock) {
+      window.__ghostPlusSupervisor.lock('AUTH_ERROR', { reason:snap.error.text || msg });
+    } else {
+      signal(snap.error.type, 'warning', 'Ghost+ web supervisor', msg, { group:'hard-error', reason:snap.error.text || msg });
+      notice('Ghost+ web supervisor', msg);
+    }
     renderWebState(snap, msg);
     S.attemptedThisEpisode = true;
     return;

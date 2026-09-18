@@ -25,3 +25,11 @@ Push defaults: HUMAN, Relay, context boundary, auth error, recovery exhausted an
 Canary checks: normal PROCEED once; HUMAN hard pause; reload persistence; trusted Resume once; uncertain→late HUMAN no probe; uncertain→late PROCEED no duplicate probe; network error while HUMAN locked sends nothing; invalid Telegram token cannot affect Ghost state; webhook bind refuses safely.
 
 No GitHub-hosted Actions are used.
+
+
+Final runtime hardening:
+- AUTH_ERROR is a persistent Operator Gate, not an auto-recovery path.
+- Recovery-budget exhaustion is a persistent Operator Gate; trusted Resume resets only that recovery episode before continuing.
+- Context boundary locks the gate directly; it no longer relies only on the gate polling the UI marker.
+- Telegram ignores legacy notification echoes, preventing duplicate remote pushes when a structured event already exists.
+- HUMAN reminder delivery is recorded only after Telegram confirms send success.

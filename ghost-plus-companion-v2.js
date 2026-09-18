@@ -374,8 +374,8 @@ async function recover(snap) {
   }
   if (S.recoveryCount >= S.recoveryBudget) {
     const msg = `Đã hết recovery budget (${S.recoveryBudget}). Cần kiểm tra thủ công.`;
-    signal('RECOVERY_EXHAUSTED', 'critical', 'Ghost+ watchdog', msg, { group:'recovery', reason:msg });
-    notice('Ghost+ watchdog', msg);
+    if (window.__ghostPlusSupervisor?.lock) window.__ghostPlusSupervisor.lock('RECOVERY_EXHAUSTED', { reason:msg });
+    else { signal('RECOVERY_EXHAUSTED', 'critical', 'Ghost+ watchdog', msg, { group:'recovery', reason:msg }); notice('Ghost+ watchdog', msg); }
     S.suspectAt = now(); return;
   }
   if (composerText()) {
@@ -593,5 +593,14 @@ S.lastSnapshot = captureSnapshot();
 S.lastProgressAt = now();
 if (S.lastSnapshot.busy.busy) { S.busySince = now(); S.lastBusyAt = now(); S.idleSince = 0; }
 else S.idleSince = now();
+function resetRecoveryEpisode() {
+  S.recoveryCount = 0;
+  S.lastRecoveryKey = '';
+  S.recoveryBaselineAssistantHash = '';
+  S.suspectAt = 0;
+  S.lastProgressAt = now();
+  S.idleSince = now();
+}
+window.__ghostPlusWatchdog = { resetRecoveryEpisode, state: () => ({ recoveryCount:S.recoveryCount, recoveryBudget:S.recoveryBudget, recovering:S.recovering }) };
 clearInterval(S.timer); S.timer = setInterval(sample, CFG.tickMs); sample();
 })();

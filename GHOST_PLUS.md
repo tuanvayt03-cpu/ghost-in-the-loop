@@ -147,3 +147,11 @@ Ghost+ v0.14 separates responsibilities cleanly:
 - Core pre-actuation/runtime blockers emit CORE_BLOCKED alerts; send-uncertain/send-threw are left to Web Recovery first to avoid noisy premature paging.
 - PLAY-SEND-THREW is recognized as an uncertain state.
 - If Web Recovery cannot safely stage/actuate/confirm its single reconciliation probe, it escalates to a persistent HUMAN gate instead of silently remaining paused.
+
+
+### v0.14.5 multi-chat delivery isolation
+
+- Delivery state is scoped per conversation path for sent markers, HUMAN reminders, and the persistent Telegram outbox.
+- Different ChatGPT tabs/chats no longer read-modify-write the same delivery maps, preventing one chat from dropping another chat's queued alert.
+- The loader initializes Telegram before the core controller, eliminating the remaining startup subscriber window for core-originated structured alerts.
+- The delivery model is at-least-once: avoiding missed alerts is preferred over eliminating the rare duplicate possible when the same conversation is open in two tabs.

@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.14.2`.
+Current loader version: `9.0.0-alpha.2+ghostplus.14.3`.
 
 ## Added behavior
 
@@ -116,3 +116,12 @@ Ghost+ v0.14 separates responsibilities cleanly:
 - While Telegram bind is active, the exact `/ghost_bind CODE` command is rendered as a clickable code chip.
 - Clicking the command copies the complete bind command through Tampermonkey clipboard access and shows a short confirmation.
 - The countdown remains visible beside the command.
+
+
+## v0.14.3 turn budget + selection safety
+
+- Turn Budget stays soft: 80% wrap-up, 90% checkpoint, 100% overdue but never a forced Stop of an in-flight operation.
+- Every Ghost-managed Continue/Recovery turn receives the stronger budget contract automatically.
+- Programmatic composer writes preserve any non-collapsed text selection outside the composer.
+- Operator Gate no longer focuses the composer merely to clear a blocked recovery draft.
+- Release-runtime audit found no global mouse/pointer/select-start interception. The only global capture click guard is scoped to the Ghost Play button while an Operator Gate is locked.

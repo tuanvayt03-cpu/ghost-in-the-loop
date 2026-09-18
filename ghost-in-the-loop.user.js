@@ -112,6 +112,28 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const now = () => Date.now();
 const displayText = value => String(value ?? '').replace(/\u00a0/g, ' ').replace(/\r/g, '').trim();
 const semanticText = value => displayText(value).replace(/\s+/g, ' ').trim();
+function captureExternalSelection(el) {
+  try {
+    const sel = window.getSelection?.();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+    const a = sel.anchorNode, f = sel.focusNode;
+    if ((a && el?.contains?.(a)) || (f && el?.contains?.(f))) return null;
+    const ranges = [];
+    for (let i = 0; i < sel.rangeCount; i++) ranges.push(sel.getRangeAt(i).cloneRange());
+    return ranges;
+  } catch (_) { return null; }
+}
+function restoreExternalSelection(ranges) {
+  if (!ranges?.length) return;
+  try {
+    const sel = window.getSelection?.();
+    if (!sel) return;
+    const live = ranges.filter(r => r.startContainer?.isConnected && r.endContainer?.isConnected);
+    if (!live.length) return;
+    sel.removeAllRanges();
+    for (const r of live) sel.addRange(r);
+  } catch (_) {}
+}
 const visible = el => !!el && el.isConnected && !el.disabled && el.getAttribute('aria-disabled') !== 'true' && !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
 
 function queryFirst(selectors, root = document, requireVisible = true) {
@@ -234,6 +256,7 @@ function cleanerzPrompt() {
 async function setComposerText(text) {
   const expected = semanticText(text); let el = composer();
   if (!el) return { ok: false, why: 'input-missing' };
+  const preservedSelection = captureExternalSelection(el);
   try {
     el.focus();
     if (el.isContentEditable) {
@@ -252,6 +275,7 @@ async function setComposerText(text) {
       el.dispatchEvent(new Event('change', { bubbles: true }));
     }
   } catch (error) { return { ok: false, why: 'write-exception', error: String(error?.message || error) }; }
+  finally { restoreExternalSelection(preservedSelection); }
 
   const started = now(); let observed = '';
   while (now() - started < WRITE_VERIFY_MS) {

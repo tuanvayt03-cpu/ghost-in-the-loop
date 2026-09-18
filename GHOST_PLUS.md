@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.14.1`.
+Current loader version: `9.0.0-alpha.2+ghostplus.14.2`.
 
 ## Added behavior
 
@@ -109,3 +109,10 @@ Ghost+ v0.14 separates responsibilities cleanly:
 - To bind a topic, start Bind topic/group and send the displayed `/ghost_bind CODE` inside the exact topic that should receive alerts.
 - Ghost stores both `chat_id` and `message_thread_id`; Test and runtime alerts reuse both.
 - Manual Topic ID entry is also available for advanced setup.
+
+
+## v0.14.2 click-to-copy bind
+
+- While Telegram bind is active, the exact `/ghost_bind CODE` command is rendered as a clickable code chip.
+- Clicking the command copies the complete bind command through Tampermonkey clipboard access and shows a short confirmation.
+- The countdown remains visible beside the command.

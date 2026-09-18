@@ -157,6 +157,17 @@ function forget(){
 function buttonStyle(){
   return 'width:100%;padding:5px 6px;border:1px solid rgba(100,116,139,.35);border-radius:6px;background:#fff;cursor:pointer;font:10px system-ui'
 }
+function copyBindCommand(){
+  if(!code)return;
+  const command='/ghost_bind '+code;
+  try{
+    if(typeof GM_setClipboard==='function')GM_setClipboard(command,'text');
+    else if(navigator.clipboard?.writeText)navigator.clipboard.writeText(command);
+    else throw new Error('Clipboard API unavailable');
+    lastError='Đã copy '+command+' ✓';
+  }catch(e){lastError='Không copy được: '+n(e?.message||e)}
+  render()
+}
 function ui(){
   const h=q('#ghostplus-watch');if(!h)return null;
   let r=q('#ghostplus-telegram',h);if(r)return r;
@@ -206,9 +217,18 @@ function render(){
   q('[data-reason]',r).checked=get(K.r,false)===true;
   q('[data-stall]',r).checked=get(K.s,true)!==false;
   q('[data-done]',r).checked=get(K.f,false)===true;
-  q('[data-help]',r).textContent=code
-    ?'Gửi /ghost_bind '+code+' NGAY TRONG topic muốn nhận alert · '+Math.max(0,Math.ceil((deadline-now())/1000))+'s'
-    :(th?'Đang gửi vào topic ID '+th+'. Muốn đổi topic: Bind lại và gửi mã trong topic mới.':'Bind topic/group: gửi mã bind trong đúng topic. Nếu gửi ở General thì alert sẽ vào General.');
+  const help=q('[data-help]',r);
+  if(code){
+    const command='/ghost_bind '+code;
+    help.innerHTML='<span>Gửi </span><button type="button" data-copy-bind title="Bấm để copy command" style="padding:1px 5px;border:1px solid rgba(59,130,246,.35);border-radius:5px;background:rgba(239,246,255,.9);color:#1d4ed8;cursor:pointer;font:10px ui-monospace,monospace"></button><span> NGAY TRONG topic muốn nhận alert · '+Math.max(0,Math.ceil((deadline-now())/1000))+'s</span>';
+    const copy=q('[data-copy-bind]',help);
+    copy.textContent=command;
+    copy.onclick=copyBindCommand;
+  }else{
+    help.textContent=th
+      ?'Đang gửi vào topic ID '+th+'. Muốn đổi topic: Bind lại và gửi mã trong topic mới.'
+      :'Bind topic/group: gửi mã bind trong đúng topic. Nếu gửi ở General thì alert sẽ vào General.';
+  }
   q('[data-error]',r).textContent=lastError
 }
 function reminders(){

@@ -54,6 +54,11 @@ function restoreExternalSelection(ranges) {
     for (const r of live) sel.addRange(r);
   } catch (_) {}
 }
+function focusNoScroll(el) {
+  try { el?.focus?.({ preventScroll:true }); }
+  catch (_) { try { el?.focus?.(); } catch (_) {} }
+}
+
 const norm = v => String(v || '').replace(/\s+/g, ' ').trim();
 const visible = el => !!el && el.isConnected && !el.disabled && el.getAttribute('aria-disabled') !== 'true' &&
   !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
@@ -241,7 +246,7 @@ async function setComposerText(text) {
   if (!el) return false;
   const preservedSelection = captureExternalSelection(el);
   try {
-    el.focus();
+    focusNoScroll(el);
     if (el.isContentEditable) {
       const range = document.createRange(); range.selectNodeContents(el);
       const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);

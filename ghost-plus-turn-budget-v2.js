@@ -37,6 +37,11 @@ function restoreExternalSelection(ranges) {
   } catch (_) {}
 }
 
+function focusNoScroll(el) {
+  try { el?.focus?.({ preventScroll:true }); }
+  catch (_) { try { el?.focus?.(); } catch (_) {} }
+}
+
 const T = { injectedText:'', injectedAt:0, beforeUsers:0 };
 
 function budgetMinutes(){
@@ -85,7 +90,7 @@ function replaceComposerSafely(el,text){
   if(!el) return false;
   const expected=norm(text), preservedSelection=captureExternalSelection(el);
   try{
-    el.focus();
+    focusNoScroll(el);
     if(el.isContentEditable){
       const range=document.createRange(); range.selectNodeContents(el);
       const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
@@ -107,7 +112,7 @@ function clearComposerSafely(el){
   if(!el) return false;
   const preservedSelection=captureExternalSelection(el);
   try{
-    el.focus();
+    focusNoScroll(el);
     if(el.isContentEditable){
       const range=document.createRange(); range.selectNodeContents(el);
       const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(range);

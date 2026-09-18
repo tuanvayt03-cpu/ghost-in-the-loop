@@ -48,6 +48,11 @@ function restoreExternalSelection(ranges) {
     for (const r of live) sel.addRange(r);
   } catch (_) {}
 }
+function focusNoScroll(el) {
+  try { el?.focus?.({ preventScroll:true }); }
+  catch (_) { try { el?.focus?.(); } catch (_) {} }
+}
+
 const norm = v => String(v || '').replace(/\s+/g, ' ').trim();
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, Number.isFinite(n) ? n : lo));
 
@@ -341,7 +346,7 @@ async function setComposerText(text) {
   const expected = norm(text), el = composer(); if (!el) return false;
   const preservedSelection = captureExternalSelection(el);
   try {
-    el.focus();
+    focusNoScroll(el);
     if (el.isContentEditable) {
       const range = document.createRange(); range.selectNodeContents(el);
       const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);

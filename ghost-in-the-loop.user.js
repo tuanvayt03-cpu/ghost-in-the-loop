@@ -134,6 +134,11 @@ function restoreExternalSelection(ranges) {
     for (const r of live) sel.addRange(r);
   } catch (_) {}
 }
+function focusNoScroll(el) {
+  try { el?.focus?.({ preventScroll:true }); }
+  catch (_) { try { el?.focus?.(); } catch (_) {} }
+}
+
 const visible = el => !!el && el.isConnected && !el.disabled && el.getAttribute('aria-disabled') !== 'true' && !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
 
 function queryFirst(selectors, root = document, requireVisible = true) {
@@ -278,7 +283,7 @@ async function setComposerText(text) {
   if (!el) return { ok: false, why: 'input-missing' };
   const preservedSelection = captureExternalSelection(el);
   try {
-    el.focus();
+    focusNoScroll(el);
     if (el.isContentEditable) {
       const range = document.createRange(); range.selectNodeContents(el);
       const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
@@ -403,7 +408,10 @@ async function handleDrift(tail) {
 async function tick() {
   if (S.mode !== 'RUNNING' || S.sending || S.uncertain) return;
   if (generating()) {
-    S.detail = 'Model working...'; S.stableHash = ''; S.stableSince = 0; render(); return;
+    const changed = S.detail !== 'Model working...';
+    S.detail = 'Model working...'; S.stableHash = ''; S.stableSince = 0;
+    if (changed) render();
+    return;
   }
   const text = assistantText();
   if (!text) { S.detail = 'Waiting for assistant output...'; render(); return; }

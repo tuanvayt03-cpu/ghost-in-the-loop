@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.14.5`.
+Current loader version: `9.0.0-alpha.2+ghostplus.14.6`.
 
 ## Added behavior
 
@@ -155,3 +155,13 @@ Ghost+ v0.14 separates responsibilities cleanly:
 - Different ChatGPT tabs/chats no longer read-modify-write the same delivery maps, preventing one chat from dropping another chat's queued alert.
 - The loader initializes Telegram before the core controller, eliminating the remaining startup subscriber window for core-originated structured alerts.
 - The delivery model is at-least-once: avoiding missed alerts is preferred over eliminating the rare duplicate possible when the same conversation is open in two tabs.
+
+
+## v0.14.6 scroll/performance hardening
+
+- Static runtime audit found no Ghost wheel/mousewheel/touchmove/selectstart listener, no programmatic scroll/scrollIntoView call, and no body/html overflow lock.
+- The page-wide character-data MutationObservers in Operator Gate and uncertain reconciliation were removed; both paths already have bounded polling.
+- Operator Gate skips full assistant-text scans while ChatGPT is visibly BUSY and while a persistent gate is already active.
+- Uncertain reconciliation checks the cheap uncertain-state predicate before reading assistant text.
+- Ghost-managed composer writes use focus({preventScroll:true}) where supported so prompt staging cannot pull the viewport to the composer.
+- Core no longer rebuilds the whole Ghost panel once per second while a continuous BUSY state remains unchanged.

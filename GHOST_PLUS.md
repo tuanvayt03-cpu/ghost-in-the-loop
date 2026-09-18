@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.14`.
+Current loader version: `9.0.0-alpha.2+ghostplus.14.1`.
 
 ## Added behavior
 
@@ -99,3 +99,13 @@ Ghost+ v0.14 separates responsibilities cleanly:
 - Telegram is notification-only. It cannot resume Ghost, clear a gate or modify execution state.
 - Telegram group binding polls only during the explicit 60-second bind window. Normal runtime is push-only.
 - Release loader pins runtime modules to reviewed commit `1c8d72b682ef3a21e6b271d91e191e17c23d958e` and updates from `main`.
+
+
+## v0.14.1 Telegram topic UI
+
+- Stored Bot Token is shown masked in the panel: first 4 characters + mask + last 4 characters. The full token stays in Tampermonkey storage.
+- Telegram actions are four distinct buttons: Save, Check bot, Bind topic/group, Test.
+- Forum topics are supported through Telegram `message_thread_id`.
+- To bind a topic, start Bind topic/group and send the displayed `/ghost_bind CODE` inside the exact topic that should receive alerts.
+- Ghost stores both `chat_id` and `message_thread_id`; Test and runtime alerts reuse both.
+- Manual Topic ID entry is also available for advanced setup.

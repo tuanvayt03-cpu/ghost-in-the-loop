@@ -21,6 +21,8 @@ const token=()=>n(get(K.t,''));
 const dest=()=>n(get(K.c,''));
 const thread=()=>{const v=Number(get(K.h,0));return Number.isInteger(v)&&v>0?v:0};
 const enabled=()=>get(K.e,false)===true;
+const scopePath=()=>String(location.pathname||'/').split(/[?#]/)[0];
+const scoped=k=>k+':'+encodeURIComponent(scopePath());
 function json(k){try{const v=get(k,'{}');return typeof v==='object'?(v||{}):JSON.parse(String(v||'{}'))}catch(_){return{}}}
 function put(k,v){set(k,JSON.stringify(v))}
 function maskToken(v=token()){
@@ -60,10 +62,10 @@ function ttlFor(e){
   if(e?.severity==='critical')return 24*60*60*1000;
   return 2*60*60*1000
 }
-function outbox(){return json(K.o)}
+function outbox(){return json(scoped(K.o))}
 function saveOutbox(box){
   const entries=Object.entries(box||{}).sort((a,b)=>(Number(b[1]?.createdAt)||0)-(Number(a[1]?.createdAt)||0)).slice(0,80);
-  put(K.o,Object.fromEntries(entries))
+  put(scoped(K.o),Object.fromEntries(entries))
 }
 function queued(k){return !!outbox()[k]}
 function dropQueued(k){const box=outbox();if(!(k in box))return;delete box[k];saveOutbox(box)}
@@ -113,8 +115,8 @@ async function retry(method,data,ntry=2){
   }
   throw e
 }
-function mark(k){const m=json(K.x);m[k]=now();put(K.x,Object.fromEntries(Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,120)))}
-function sent(k){return!!json(K.x)[k]}
+function mark(k){const sk=scoped(K.x),m=json(sk);m[k]=now();put(sk,Object.fromEntries(Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,120)))}
+function sent(k){return!!(json(scoped(K.x))[k]||json(K.x)[k])}
 function should(e){
   if(e?.source==='legacy')return false;
   if(!enabled()||!token()||!dest())return false;
@@ -341,12 +343,12 @@ function reminders(){
   if(!enabled()||!token()||!dest())return;
   const g=window.__ghostPlusSupervisor?.gate?.();
   if(!g||g.type!=='HUMAN_REQUIRED'||!g.id)return;
-  const age=now()-Number(g.since||0),m=json(K.m),e={id:'rem:'+g.id,type:'HUMAN_REQUIRED',episodeId:g.id,reason:g.reason||'',chat:g.chat};
+  const reminderStore=scoped(K.m),legacy=json(K.m),age=now()-Number(g.since||0),m=json(reminderStore),e={id:'rem:'+g.id,type:'HUMAN_REQUIRED',episodeId:g.id,reason:g.reason||'',chat:g.chat};
   for(const [tag,ms] of [['15m',900000],['60m',3600000]]){
     const rk=g.id+':'+tag;
-    if(age<ms||m[rk]||reminderPending.has(rk))continue;
+    if(age<ms||m[rk]||legacy[rk]||reminderPending.has(rk))continue;
     reminderPending.add(rk);
-    send(e,{key:'reminder:'+rk,rem:true}).then(ok=>{if(ok){const mm=json(K.m);mm[rk]=now();put(K.m,mm)}}).finally(()=>reminderPending.delete(rk))
+    send(e,{key:'reminder:'+rk,rem:true}).then(ok=>{if(ok){const mm=json(reminderStore);mm[rk]=now();put(reminderStore,mm)}}).finally(()=>reminderPending.delete(rk))
   }
 }
 

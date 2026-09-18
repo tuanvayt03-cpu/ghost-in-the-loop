@@ -15,7 +15,7 @@ const now=()=>Date.now(),sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const get=(k,d='')=>{try{return GM_getValue(k,d)}catch(_){return d}};
 const set=(k,v)=>{try{GM_setValue(k,v)}catch(_){}};
 let code='',deadline=0,offset=0,timer=null,lastError='',queue=Promise.resolve();
-const reminderPending=new Set();
+const reminderPending=new Set(), sendPending=new Set(), gateSyncAttempt=new Map();
 
 const token=()=>n(get(K.t,''));
 const dest=()=>n(get(K.c,''));
@@ -86,12 +86,14 @@ function text(e,rem=false){
 function send(e,{key='',rem=false}={}){
   if(!rem&&!should(e))return Promise.resolve(false);
   const k=key||'event:'+(e.episodeId||e.id||e.type+':'+e.at)+':'+e.type;
-  if(sent(k))return Promise.resolve(false);
+  if(sent(k)||sendPending.has(k))return Promise.resolve(false);
+  sendPending.add(k);
   queue=queue.catch(()=>{}).then(async()=>{
     try{
       await retry('sendMessage',targetPayload({text:text(e,rem)}),2);
       mark(k);lastError='';render();return true
     }catch(x){lastError=n(x?.message||x).slice(0,220);render();return false}
+    finally{sendPending.delete(k)}
   });
   return queue
 }
@@ -231,6 +233,34 @@ function render(){
   }
   q('[data-error]',r).textContent=lastError
 }
+function gateEvent(g){
+  if(!g?.id||!g?.type)return null;
+  return {
+    id:'gate:'+g.id,
+    type:g.type,
+    severity:'critical',
+    group:'operator',
+    title:'Ghost+ · '+String(g.type).replaceAll('_',' '),
+    text:String(g.type).replaceAll('_',' ')+' · '+g.id,
+    episodeId:g.id,
+    reason:g.reason||'',
+    chat:g.chat||window.__ghostPlusCurrentChatName?.()||'ChatGPT',
+    source:'gate-sync',
+    at:Number(g.since)||now()
+  }
+}
+function syncCurrentGate(force=false){
+  if(!enabled()||!token()||!dest())return;
+  const g=window.__ghostPlusSupervisor?.gate?.();
+  const e=gateEvent(g);
+  if(!e||!['HUMAN_REQUIRED','MODEL_RELAY','CONTEXT_BOUNDARY','AUTH_ERROR','RECOVERY_EXHAUSTED'].includes(e.type))return;
+  const k='event:'+e.episodeId+':'+e.type;
+  if(sent(k)||sendPending.has(k))return;
+  const last=gateSyncAttempt.get(k)||0;
+  if(!force&&now()-last<30000)return;
+  gateSyncAttempt.set(k,now());
+  send(e,{key:k});
+}
 function reminders(){
   if(!enabled()||!token()||!dest())return;
   const g=window.__ghostPlusSupervisor?.gate?.();
@@ -245,6 +275,8 @@ function reminders(){
 }
 
 window.__ghostPlusAlerts?.subscribe?.(e=>send(e));
+setTimeout(()=>syncCurrentGate(true),1000);
+setInterval(syncCurrentGate,10000);
 setInterval(reminders,60000);setInterval(render,1500);ui();render();
-window.__ghostPlusTelegram={getMe,test,bind,send,forget,threadId:thread,maskedToken:maskToken};
+window.__ghostPlusTelegram={getMe,test,bind,send,forget,threadId:thread,maskedToken:maskToken,syncCurrentGate};
 })();

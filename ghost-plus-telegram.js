@@ -163,7 +163,7 @@ function send(e,{key='',rem=false}={}){
   const k=key||'event:'+(e.episodeId||e.id||e.type+':'+e.at)+':'+e.type;
   if(sent(k))return Promise.resolve(false);
   queueEvent(k,e,rem);
-  return attemptQueued(k,true)
+  return attemptQueued(k,false)
 }
 function drainOutbox(force=false){
   if(!enabled()||!token()||!dest())return;

@@ -26,6 +26,28 @@ const q = (s, r = document) => r.querySelector(s);
 const qa = (s, r = document) => [...r.querySelectorAll(s)];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const now = () => Date.now();
+function captureExternalSelection(el) {
+  try {
+    const sel = window.getSelection?.();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+    const a = sel.anchorNode, f = sel.focusNode;
+    if ((a && el?.contains?.(a)) || (f && el?.contains?.(f))) return null;
+    const ranges = [];
+    for (let i = 0; i < sel.rangeCount; i++) ranges.push(sel.getRangeAt(i).cloneRange());
+    return ranges;
+  } catch (_) { return null; }
+}
+function restoreExternalSelection(ranges) {
+  if (!ranges?.length) return;
+  try {
+    const sel = window.getSelection?.();
+    if (!sel) return;
+    const live = ranges.filter(r => r.startContainer?.isConnected && r.endContainer?.isConnected);
+    if (!live.length) return;
+    sel.removeAllRanges();
+    for (const r of live) sel.addRange(r);
+  } catch (_) {}
+}
 const norm = v => String(v || '').replace(/\s+/g, ' ').trim();
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, Number.isFinite(n) ? n : lo));
 
@@ -317,6 +339,7 @@ function recoveryPrompt() {
 
 async function setComposerText(text) {
   const expected = norm(text), el = composer(); if (!el) return false;
+  const preservedSelection = captureExternalSelection(el);
   try {
     el.focus();
     if (el.isContentEditable) {
@@ -335,6 +358,7 @@ async function setComposerText(text) {
       el.dispatchEvent(new Event('change', { bubbles:true }));
     }
   } catch (_) { return false; }
+  finally { restoreExternalSelection(preservedSelection); }
   await sleep(150);
   return norm(composerText()) === expected;
 }

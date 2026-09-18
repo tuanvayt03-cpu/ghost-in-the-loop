@@ -14,6 +14,28 @@ const qa = (s, r=document) => [...r.querySelectorAll(s)];
 const norm = v => String(v || '').replace(/\s+/g, ' ').trim();
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, Number.isFinite(n) ? n : lo));
 const now = () => Date.now();
+function captureExternalSelection(el) {
+  try {
+    const sel = window.getSelection?.();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+    const a = sel.anchorNode, f = sel.focusNode;
+    if ((a && el?.contains?.(a)) || (f && el?.contains?.(f))) return null;
+    const ranges = [];
+    for (let i = 0; i < sel.rangeCount; i++) ranges.push(sel.getRangeAt(i).cloneRange());
+    return ranges;
+  } catch (_) { return null; }
+}
+function restoreExternalSelection(ranges) {
+  if (!ranges?.length) return;
+  try {
+    const sel = window.getSelection?.();
+    if (!sel) return;
+    const live = ranges.filter(r => r.startContainer?.isConnected && r.endContainer?.isConnected);
+    if (!live.length) return;
+    sel.removeAllRanges();
+    for (const r of live) sel.addRange(r);
+  } catch (_) {}
+}
 
 const T = { injectedText:'', injectedAt:0, beforeUsers:0 };
 
@@ -33,16 +55,18 @@ function isGhostManagedPrompt(text){
 function budgetContract(){
   const minutes = budgetMinutes();
   if (!minutes) return '';
+  const wrapAt = Math.max(1, Math.round(minutes * 0.80));
+  const checkpointAt = Math.max(wrapAt, Math.round(minutes * 0.90));
   let deadline='';
   try { deadline = new Date(now()+minutes*60000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); } catch(_){}
   return [
     '[WEB TURN BUDGET]',
-    `Soft target for this ChatGPT Web turn: about ${minutes} minutes${deadline ? `; target handoff/checkpoint by about ${deadline} local browser time` : ''}.`,
-    'This is a planning budget, not a hard stop timer.',
-    'Complete one bounded unit of work in this turn. Do not open another large branch late in the turn.',
-    'Preserve fresh machine evidence and a precise checkpoint while working.',
-    'If meaningful work remains when the bounded unit is safely complete, checkpoint the exact current state and return the normal PROCEED control marker so Ghost can continue in a fresh turn.',
-    'Do not weaken verification or tests to meet the budget.',
+    `Turn budget: about ${minutes} minutes${deadline ? `; target checkpoint by about ${deadline} local browser time` : ''}.`,
+    'This is a planning deadline, not permission to hard-stop an in-flight operation.',
+    `By about minute ${wrapAt} (~80%): stop opening new branches of work and start wrapping the current bounded unit.`,
+    `By about minute ${checkpointAt} (~90%): finish the current safe atomic operation, verify it, record the exact checkpoint/evidence, and prepare to hand off.`,
+    `At minute ${minutes}: if still BUSY, do not abandon or interrupt an in-flight side effect merely to meet the clock. Finish at the next safe boundary, then return the normal PROCEED control marker so Ghost starts a fresh turn.`,
+    'Preserve fresh machine evidence and exact side-effect state. Do not weaken verification or tests to meet the budget.',
     'Do not replay, resend, or retry any action whose outcome is uncertain.'
   ].join('\n');
 }
@@ -59,7 +83,7 @@ function generating(){
 }
 function replaceComposerSafely(el,text){
   if(!el) return false;
-  const expected=norm(text);
+  const expected=norm(text), preservedSelection=captureExternalSelection(el);
   try{
     el.focus();
     if(el.isContentEditable){
@@ -76,10 +100,12 @@ function replaceComposerSafely(el,text){
       el.dispatchEvent(new Event('change',{bubbles:true}));
     }
   }catch(_){ return false; }
+  finally{ restoreExternalSelection(preservedSelection); }
   return composerText(el)===expected;
 }
 function clearComposerSafely(el){
   if(!el) return false;
+  const preservedSelection=captureExternalSelection(el);
   try{
     el.focus();
     if(el.isContentEditable){
@@ -96,6 +122,7 @@ function clearComposerSafely(el){
       el.dispatchEvent(new Event('change',{bubbles:true}));
     }
   }catch(_){ return false; }
+  finally{ restoreExternalSelection(preservedSelection); }
   return composerText(el)==='';
 }
 function isChatGptSendButton(el){
@@ -157,7 +184,7 @@ function ensureUi(){
   let row=q('#ghostplus-turn-budget',host); if(row) return row;
   row=document.createElement('div'); row.id='ghostplus-turn-budget';
   row.style.cssText='margin-top:5px;padding-top:5px;border-top:1px solid rgba(148,163,184,.25);font-size:10px;line-height:1.35';
-  row.innerHTML=`<div style="display:flex;align-items:center;justify-content:space-between;gap:6px"><span><span data-budget-dot style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#94a3b8;margin-right:4px"></span><b>Ngân sách turn</b> <span data-budget-state>chờ turn</span></span><span data-budget-elapsed>00:00</span></div><div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:4px"><select data-budget-min style="font:10px system-ui;padding:3px 4px;border:1px solid rgba(148,163,184,.42);border-radius:5px;background:#fff;color:#475569"><option value="0">Tắt</option><option value="15">15 phút</option><option value="18">18 phút</option><option value="20">20 phút</option><option value="22">22 phút</option><option value="24">24 phút</option></select><span style="color:#64748b">chỉ nhắc, không tự Stop</span></div>`;
+  row.innerHTML=`<div style="display:flex;align-items:center;justify-content:space-between;gap:6px"><span><span data-budget-dot style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#94a3b8;margin-right:4px"></span><b>Ngân sách turn</b> <span data-budget-state>chờ turn</span></span><span data-budget-elapsed>00:00</span></div><div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:4px"><select data-budget-min style="font:10px system-ui;padding:3px 4px;border:1px solid rgba(148,163,184,.42);border-radius:5px;background:#fff;color:#475569"><option value="0">Tắt</option><option value="15">15 phút</option><option value="18">18 phút</option><option value="20">20 phút</option><option value="22">22 phút</option><option value="24">24 phút</option></select><span style="color:#64748b">80% wrap · 90% checkpoint · không tự Stop</span></div>`;
   host.appendChild(row);
   const select=q('[data-budget-min]',row); select.value=String(budgetMinutes());
   select.onchange=e=>{setBudgetMinutes(e.target.value);GM_setValue(K.startedAt,0);};
@@ -175,8 +202,9 @@ function renderUi(){
   dot.style.background='#94a3b8';
   if(!minutes) state.textContent='tắt';
   else if(!startedAt) state.textContent='chờ turn';
-  else if(elapsed>=limit){state.textContent='vượt soft budget';dot.style.background='#ef4444';}
-  else if(elapsed>=limit*.9){state.textContent='nên checkpoint';dot.style.background='#f59e0b';}
+  else if(elapsed>=limit){state.textContent='quá budget · chờ safe checkpoint';dot.style.background='#ef4444';}
+  else if(elapsed>=limit*.9){state.textContent='checkpoint ngay';dot.style.background='#f97316';}
+  else if(elapsed>=limit*.8){state.textContent='wrap up';dot.style.background='#f59e0b';}
   else{state.textContent='ổn';dot.style.background='#10b981';}
 }
 setInterval(renderUi,CFG.tickMs);

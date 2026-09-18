@@ -191,9 +191,29 @@ function log(type, data = {}) {
 function fail(code, detail, data = {}) {
   S.lastError = { code, detail, at: new Date().toISOString(), ...data };
   log('error', { code, ...data }); pause(`${code}: ${detail}`);
+  if(!/^PLAY-SEND-(UNCERTAIN|THREW)$/.test(code)){
+    structured('CORE_BLOCKED','critical','core','Ghost core blocked',`${code}: ${detail}`,{id:`core:${code}:${Date.now()}`});
+  }
 }
 function notify(title, text) {
   try { if (typeof GM_notification === 'function') GM_notification({ title, text, timeout: 8000 }); } catch (_) {}
+}
+function structured(type,severity,group,title,text,extra={}) {
+  try {
+    const e=window.__ghostPlusAlerts?.emit?.({type,severity,group,title,text,reason:text,...extra});
+    if(e)return e;
+  } catch (_) {}
+  notify(title,text);
+}
+function humanBlock(detail) {
+  pause(detail);
+  try {
+    if(window.__ghostPlusSupervisor?.lock){
+      window.__ghostPlusSupervisor.lock('HUMAN_REQUIRED',{reason:detail});
+      return;
+    }
+  } catch (_) {}
+  structured('CORE_BLOCKED','critical','operator','Ghost paused',detail);
 }
 
 function contractText() {
@@ -349,16 +369,28 @@ async function handleTerminal(text, parsed) {
   if (!text || fp === S.lastHandled || S.mode !== 'RUNNING' || S.sending) return;
   S.lastHandled = fp;
   if (parsed.type === 'halt') {
-    S.drift = 0; complete('Task complete'); notify('Ghost complete', 'The AI returned HALT.'); return;
+    S.drift = 0; complete('Task complete');
+    structured('COMPLETE','info','complete','Ghost complete','The AI returned HALT.',{id:`core-halt:${fp}`});
+    return;
   }
   if (parsed.type === 'human') {
-    S.drift = 0; pause('Human decision requested by the AI.'); notify('Ghost paused', 'The AI requested a human decision.'); return;
+    S.drift = 0;
+    try {
+      if(window.__ghostPlusSupervisor?.lock) window.__ghostPlusSupervisor.lock('HUMAN_REQUIRED',{h:fp,reason:'The AI requested a human decision.'});
+      else { pause('Human decision requested by the AI.'); notify('Ghost paused','The AI requested a human decision.'); }
+    } catch (_) { pause('Human decision requested by the AI.'); notify('Ghost paused','The AI requested a human decision.'); }
+    return;
   }
   if (parsed.type === 'relay') {
-    S.drift = 0; S.relay = parsed.model; pause(`Model Relay requested: ${parsed.model}.`); notify('Model Relay requested', parsed.model); return;
+    S.drift = 0; S.relay = parsed.model;
+    try {
+      if(window.__ghostPlusSupervisor?.lock) window.__ghostPlusSupervisor.lock('MODEL_RELAY',{h:fp,reason:'Model Relay requested.',model:parsed.model});
+      else { pause(`Model Relay requested: ${parsed.model}.`); notify('Model Relay requested',parsed.model); }
+    } catch (_) { pause(`Model Relay requested: ${parsed.model}.`); notify('Model Relay requested',parsed.model); }
+    return;
   }
   if (parsed.type === 'proceed') {
-    S.drift = 0; if (S.round >= S.max) { pause('Round safety limit reached.'); return; }
+    S.drift = 0; if (S.round >= S.max) { humanBlock('Round safety limit reached. Increase/reset the round limit or review the job before continuing.'); return; }
     await sendOnce(continuationPrompt(), 'continue');
   }
 }
@@ -366,7 +398,7 @@ async function handleDrift(tail) {
   S.drift += 1; log('protocol-drift', { count: S.drift, tail: String(tail || '').slice(0, 80) });
   if (S.drift === 1) { await sendOnce(regroundPrompt(), 'protocol reground'); return; }
   if (S.drift === 2 && ON.cleanerz) { await sendOnce(cleanerzPrompt(), 'Cleanerz recovery'); return; }
-  pause(`Protocol drift repeated ${S.drift} times. Human review required.`); notify('Ghost paused', 'Repeated protocol drift needs a human check.');
+  humanBlock(`Protocol drift repeated ${S.drift} times. Human review required.`);
 }
 async function tick() {
   if (S.mode !== 'RUNNING' || S.sending || S.uncertain) return;

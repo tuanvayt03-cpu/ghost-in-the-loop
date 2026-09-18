@@ -67,12 +67,29 @@ function notice(title, text) {
 }
 function ghostStatus() { return norm(q('#gitl9 .status')?.innerText || ''); }
 function ghostPaused() { return /^PAUSED\b/i.test(ghostStatus()); }
-function ghostUncertain() { return /PLAY-SEND-UNCERTAIN|UNCERTAIN/i.test(ghostStatus()); }
+function ghostUncertain() { return /PLAY-SEND-(UNCERTAIN|THREW)|UNCERTAIN/i.test(ghostStatus()); }
 function ghostStop() { return q('#gitl9 [data-a="stop"]'); }
 function ghostPlay() { return q('#gitl9 [data-a="play"]'); }
 function operatorLocked() { return !!window.__ghostPlusSupervisor?.isLocked?.(); }
 function signal(type, severity, title, text, extra = {}) {
   try { window.__ghostPlusAlerts?.emit?.({ type, severity, title, text, ...extra }); } catch (_) {}
+}
+function requireHuman(snap, message) {
+  const msg=norm(message||'Web recovery cannot continue safely; manual review is required.');
+  S.recovering=false;
+  S.attemptedThisEpisode=true;
+  if(snap?.key){
+    S.lastFaultKey=snap.key;S.lastFaultAttemptAt=now();
+    try{GM_setValue(K.lastFaultKey,S.lastFaultKey);GM_setValue(K.lastFaultAttemptAt,S.lastFaultAttemptAt)}catch(_){}
+  }
+  renderWebState(snap,msg);
+  try {
+    if(window.__ghostPlusSupervisor?.lock){
+      window.__ghostPlusSupervisor.lock('HUMAN_REQUIRED',{reason:msg});
+      return;
+    }
+  } catch (_) {}
+  signal('CORE_BLOCKED','critical','Ghost+ web supervisor',msg,{group:'operator',reason:msg});
 }
 function composer() { return q('#prompt-textarea') || q('textarea[data-id="root"]'); }
 function composerText() {
@@ -260,7 +277,10 @@ async function sendRecoveryProbe(snap) {
     renderWebState(snap, 'Operator Gate đang LOCKED; bỏ qua web recovery.');
     return;
   }
-  if (GM_getValue(K.auto, true) === false) return;
+  if (GM_getValue(K.auto, true) === false) {
+    requireHuman(snap,'Web recovery is disabled while a recoverable fault is active.');
+    return;
+  }
   if (snap.blockedType) {
     const msg = snap.error.type === 'RATE_LIMIT'
       ? 'Phát hiện rate limit. Ghost+ không tự gửi thêm request; cần chờ/backoff.'
@@ -280,8 +300,8 @@ async function sendRecoveryProbe(snap) {
     return;
   }
   if (composerText()) {
-    const msg = 'Ô nhập đang có nội dung của anh. Không ghi đè để recovery tự động.';
-    renderWebState(snap, msg); notice('Ghost+ web supervisor', msg); return;
+    requireHuman(snap,'Ô nhập đang có nội dung. Ghost+ không ghi đè recovery probe; cần kiểm tra thủ công.');
+    return;
   }
   if (S.attemptedThisEpisode) return;
 
@@ -290,26 +310,26 @@ async function sendRecoveryProbe(snap) {
   // Clear Ghost's internal UNCERTAIN latch only. This does NOT click ChatGPT's Stop-generating control.
   const gs = ghostStop(), gp = ghostPlay();
   if (!visible(gs) || !visible(gp)) {
-    renderWebState(snap, 'Không tìm thấy nút điều khiển Ghost đáng tin cậy.');
-    S.recovering = false; return;
+    requireHuman(snap,'Không tìm thấy nút điều khiển Ghost đáng tin cậy để reconcile uncertain state.');
+    return;
   }
   try { gs.click(); } catch (e) {
-    renderWebState(snap, 'Không reset được Ghost controller: ' + String(e?.message || e));
-    S.recovering = false; return;
+    requireHuman(snap,'Không reset được Ghost controller: '+String(e?.message||e));
+    return;
   }
   await sleep(120);
 
   const prompt = recoveryPrompt(snap);
   if (!await setComposerText(prompt)) {
-    renderWebState(snap, 'Không stage được status probe. Không gửi.');
-    S.recovering = false; return;
+    requireHuman(snap,'Không stage được status probe an toàn. Không gửi; cần kiểm tra thủ công.');
+    return;
   }
 
   const beforeUsers = users().length;
   const beforeAssistants = assistants().length;
   try { gp.click(); } catch (e) {
-    renderWebState(snap, 'Không khởi động được Ghost: ' + String(e?.message || e));
-    S.recovering = false; return;
+    requireHuman(snap,'Không khởi động được Ghost recovery: '+String(e?.message||e));
+    return;
   }
 
   const accepted = await wait(
@@ -324,9 +344,8 @@ async function sendRecoveryProbe(snap) {
   GM_setValue(K.lastFaultAttemptAt, S.lastFaultAttemptAt);
 
   if (!accepted) {
-    renderWebState(snap, 'Status probe chưa được xác nhận. Không retry tự động; cần kiểm tra thủ công.');
-    notice('Ghost+ web supervisor', 'Status probe không được xác nhận. Ghost+ sẽ không resend.');
-    S.recovering = false; return;
+    requireHuman(snap,'Status probe chưa được xác nhận. Ghost+ sẽ không resend; cần kiểm tra thủ công.');
+    return;
   }
 
   const correction = String(GM_getValue(K.correction, '') || '').trim();
@@ -373,9 +392,7 @@ function sample() {
   }
 
   sendRecoveryProbe(snap).catch(error => {
-    S.recovering = false;
-    S.attemptedThisEpisode = true;
-    renderWebState(snap, 'Recovery exception: ' + String(error?.message || error));
+    requireHuman(snap,'Recovery exception: '+String(error?.message||error));
   });
 }
 

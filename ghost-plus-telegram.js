@@ -7,7 +7,7 @@ const K={
   t:'ghostplus.tg.token',c:'ghostplus.tg.chat',n:'ghostplus.tg.name',b:'ghostplus.tg.bot',
   h:'ghostplus.tg.thread',p:'ghostplus.tg.topic',
   e:'ghostplus.tg.enabled',r:'ghostplus.tg.reason',s:'ghostplus.tg.stall',
-  f:'ghostplus.tg.complete',x:'ghostplus.tg.sent',m:'ghostplus.tg.reminders'
+  f:'ghostplus.tg.complete',x:'ghostplus.tg.sent',m:'ghostplus.tg.reminders',o:'ghostplus.tg.outbox'
 };
 const q=(s,r=document)=>r.querySelector(s);
 const n=v=>String(v||'').replace(/\s+/g,' ').trim();
@@ -21,6 +21,8 @@ const token=()=>n(get(K.t,''));
 const dest=()=>n(get(K.c,''));
 const thread=()=>{const v=Number(get(K.h,0));return Number.isInteger(v)&&v>0?v:0};
 const enabled=()=>get(K.e,false)===true;
+const scopePath=()=>String(location.pathname||'/').split(/[?#]/)[0];
+const scoped=k=>k+':'+encodeURIComponent(scopePath());
 function json(k){try{const v=get(k,'{}');return typeof v==='object'?(v||{}):JSON.parse(String(v||'{}'))}catch(_){return{}}}
 function put(k,v){set(k,JSON.stringify(v))}
 function maskToken(v=token()){
@@ -36,12 +38,61 @@ function applyTokenInput(el){
   if(v.includes('•'))throw new Error('Token đang ở dạng che. Hãy paste full token mới để thay đổi.');
   set(K.t,v);set(K.e,true);return true;
 }
-function targetPayload(extra={}){
-  const out={chat_id:dest(),...extra};
-  const th=thread();
-  if(th)out.message_thread_id=th;
-  return out;
+function currentTarget(){return{chatId:dest(),threadId:thread()}}
+function payloadForTarget(target,extra={}){
+  const out={chat_id:String(target?.chatId||''),...extra};
+  const th=Number(target?.threadId)||0;
+  if(th>0)out.message_thread_id=th;
+  return out
 }
+function targetPayload(extra={}){return payloadForTarget(currentTarget(),extra)}
+function targetKey(target=currentTarget()){return String(target?.chatId||'')+'|'+(Number(target?.threadId)||0)}
+function cleanEvent(e){
+  return {
+    id:n(e?.id).slice(0,180),type:n(e?.type).slice(0,80),severity:n(e?.severity||'info').slice(0,20),
+    group:n(e?.group||'general').slice(0,40),title:n(e?.title||'Ghost+').slice(0,160),
+    text:n(e?.text||'').slice(0,600),reason:n(e?.reason||'').slice(0,600),
+    chat:n(e?.chat||'ChatGPT').slice(0,120),path:n(e?.path||location.pathname).slice(0,240),
+    episodeId:n(e?.episodeId||'').slice(0,120),source:n(e?.source||'structured').slice(0,40),at:Number(e?.at)||now()
+  }
+}
+function ttlFor(e){
+  if(e?.type==='STALL_WARNING')return 30*60*1000;
+  if(e?.type==='COMPLETE')return 6*60*60*1000;
+  if(e?.severity==='critical')return 24*60*60*1000;
+  return 2*60*60*1000
+}
+function outbox(){return json(scoped(K.o))}
+function saveOutbox(box){
+  const entries=Object.entries(box||{}).sort((a,b)=>(Number(b[1]?.createdAt)||0)-(Number(a[1]?.createdAt)||0)).slice(0,80);
+  put(scoped(K.o),Object.fromEntries(entries))
+}
+function queued(k){return !!outbox()[k]}
+function dropQueued(k){const box=outbox();if(!(k in box))return;delete box[k];saveOutbox(box)}
+function queueEvent(k,e,rem=false){
+  const target=currentTarget();
+  if(!target.chatId)return null;
+  const box=outbox(),old=box[k];
+  if(old)return old;
+  const createdAt=now();
+  const rec={key:k,event:cleanEvent(e),rem:!!rem,target,createdAt,expiresAt:createdAt+ttlFor(e),attempts:0,nextAt:createdAt,exhausted:false};
+  box[k]=rec;saveOutbox(box);return rec
+}
+function pruneOutbox(){
+  const box=outbox(),tk=targetKey();let changed=false;
+  for(const [k,r] of Object.entries(box)){
+    if(!r||Number(r.expiresAt||0)<=now()||targetKey(r.target)!==tk||sent(k)){delete box[k];changed=true}
+  }
+  if(changed)saveOutbox(box)
+}
+function rearmOutbox(){
+  const box=outbox(),tk=targetKey();let changed=false;
+  for(const r of Object.values(box)){
+    if(r&&targetKey(r.target)===tk&&r.exhausted){r.exhausted=false;r.attempts=0;r.nextAt=now();changed=true}
+  }
+  if(changed)saveOutbox(box)
+}
+function outboxCount(){pruneOutbox();return Object.keys(outbox()).length}
 function req(method,data={}){
   const t=token();
   if(!t)return Promise.reject(new Error('Chưa có Bot Token'));
@@ -64,12 +115,12 @@ async function retry(method,data,ntry=2){
   }
   throw e
 }
-function mark(k){const m=json(K.x);m[k]=now();put(K.x,Object.fromEntries(Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,120)))}
-function sent(k){return!!json(K.x)[k]}
+function mark(k){const sk=scoped(K.x),m=json(sk);m[k]=now();put(sk,Object.fromEntries(Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,120)))}
+function sent(k){return!!(json(scoped(K.x))[k]||json(K.x)[k])}
 function should(e){
   if(e?.source==='legacy')return false;
   if(!enabled()||!token()||!dest())return false;
-  if(['HUMAN_REQUIRED','MODEL_RELAY','CONTEXT_BOUNDARY','AUTH_ERROR','RECOVERY_EXHAUSTED','RATE_LIMIT'].includes(e.type))return true;
+  if(['HUMAN_REQUIRED','MODEL_RELAY','CONTEXT_BOUNDARY','AUTH_ERROR','RECOVERY_EXHAUSTED','RATE_LIMIT','CORE_BLOCKED'].includes(e.type))return true;
   if(e.type==='STALL_WARNING')return get(K.s,true)!==false;
   if(e.type==='COMPLETE')return get(K.f,false)===true;
   return false
@@ -83,27 +134,52 @@ function text(e,rem=false){
   if(['HUMAN_REQUIRED','MODEL_RELAY','CONTEXT_BOUNDARY'].includes(e.type))a.push('Status: PAUSED — auto continuation/recovery bị khóa.');
   return a.join('\n')
 }
-function send(e,{key='',rem=false}={}){
-  if(!rem&&!should(e))return Promise.resolve(false);
-  const k=key||'event:'+(e.episodeId||e.id||e.type+':'+e.at)+':'+e.type;
-  if(sent(k)||sendPending.has(k))return Promise.resolve(false);
+const RETRY_MS=[0,15000,60000,300000,900000,1800000];
+function attemptQueued(k,force=false){
+  if(sent(k)){dropQueued(k);return Promise.resolve(false)}
+  if(sendPending.has(k))return Promise.resolve(false);
+  const rec=outbox()[k];
+  if(!rec)return Promise.resolve(false);
+  if(Number(rec.expiresAt||0)<=now()||targetKey(rec.target)!==targetKey()){dropQueued(k);return Promise.resolve(false)}
+  if(rec.exhausted||(!force&&Number(rec.nextAt||0)>now()))return Promise.resolve(false);
   sendPending.add(k);
   queue=queue.catch(()=>{}).then(async()=>{
     try{
-      await retry('sendMessage',targetPayload({text:text(e,rem)}),2);
-      mark(k);lastError='';render();return true
-    }catch(x){lastError=n(x?.message||x).slice(0,220);render();return false}
-    finally{sendPending.delete(k)}
+      await retry('sendMessage',payloadForTarget(rec.target,{text:text(rec.event,rec.rem)}),2);
+      mark(k);dropQueued(k);lastError='';render();return true
+    }catch(x){
+      const box=outbox(),fresh=box[k];
+      if(fresh){
+        fresh.attempts=(Number(fresh.attempts)||0)+1;
+        if(fresh.attempts>=RETRY_MS.length){fresh.exhausted=true;fresh.nextAt=0}
+        else fresh.nextAt=now()+RETRY_MS[fresh.attempts];
+        box[k]=fresh;saveOutbox(box)
+      }
+      lastError=n(x?.message||x).slice(0,220);render();return false
+    }finally{sendPending.delete(k)}
   });
   return queue
 }
+function send(e,{key='',rem=false}={}){
+  if(!rem&&!should(e))return Promise.resolve(false);
+  const k=key||'event:'+(e.episodeId||e.id||e.type+':'+e.at)+':'+e.type;
+  if(sent(k))return Promise.resolve(false);
+  queueEvent(k,e,rem);
+  return attemptQueued(k,false)
+}
+function drainOutbox(force=false){
+  if(!enabled()||!token()||!dest())return;
+  pruneOutbox();
+  for(const k of Object.keys(outbox()))attemptQueued(k,force)
+}
 async function getMe(){
   const me=await req('getMe');
-  set(K.b,me?.username||me?.first_name||'bot');set(K.e,true);lastError='';render();return me
+  set(K.b,me?.username||me?.first_name||'bot');set(K.e,true);lastError='';rearmOutbox();drainOutbox(true);render();return me
 }
 async function test(){
   if(!dest())throw new Error('Chưa có destination');
-  await retry('sendMessage',targetPayload({text:'👻 Ghost+ test OK\nAlerts ready.'}),1)
+  await retry('sendMessage',targetPayload({text:'👻 Ghost+ test OK\nAlerts ready.'}),1);
+  rearmOutbox();drainOutbox(true)
 }
 function secureCode(){
   if(!globalThis.crypto?.getRandomValues)throw new Error('Secure random unavailable');
@@ -144,7 +220,8 @@ function saveDest(v,threadValue=''){
   if(tv&&!/^\d+$/.test(tv))throw new Error('Topic ID phải là số.');
   if(v){set(K.c,v);set(K.n,v)}
   set(K.h,tv?String(Number(tv)):'');set(K.p,tv?('topic #'+Number(tv)):'');
-  if(v||dest())set(K.e,true)
+  if(v||dest())set(K.e,true);
+  pruneOutbox()
 }
 function saveUi(){
   const r=q('#ghostplus-telegram');if(!r)return;
@@ -215,7 +292,8 @@ function render(){
   if(document.activeElement!==de)de.value=dest();
   if(document.activeElement!==te)te.value=th?String(th):'';
   const target=name+(th?' · '+(topic||('topic #'+th)):'');
-  q('[data-st]',r).textContent=ok?'✓ '+(bot?'@'+bot.replace(/^@/,'')+' → ':'')+target:token()?(dest()?'token ✓ · đích ✓':'token ✓ · chưa bind'):'chưa cấu hình';
+  const queuedN=outboxCount();
+  q('[data-st]',r).textContent=(ok?'✓ '+(bot?'@'+bot.replace(/^@/,'')+' → ':'')+target:token()?(dest()?'token ✓ · đích ✓':'token ✓ · chưa bind'):'chưa cấu hình')+(queuedN?' · queue '+queuedN:'');
   q('[data-reason]',r).checked=get(K.r,false)===true;
   q('[data-stall]',r).checked=get(K.s,true)!==false;
   q('[data-done]',r).checked=get(K.f,false)===true;
@@ -255,7 +333,7 @@ function syncCurrentGate(force=false){
   const e=gateEvent(g);
   if(!e||!['HUMAN_REQUIRED','MODEL_RELAY','CONTEXT_BOUNDARY','AUTH_ERROR','RECOVERY_EXHAUSTED'].includes(e.type))return;
   const k='event:'+e.episodeId+':'+e.type;
-  if(sent(k)||sendPending.has(k))return;
+  if(sent(k)||sendPending.has(k)||queued(k))return;
   const last=gateSyncAttempt.get(k)||0;
   if(!force&&now()-last<30000)return;
   gateSyncAttempt.set(k,now());
@@ -265,18 +343,19 @@ function reminders(){
   if(!enabled()||!token()||!dest())return;
   const g=window.__ghostPlusSupervisor?.gate?.();
   if(!g||g.type!=='HUMAN_REQUIRED'||!g.id)return;
-  const age=now()-Number(g.since||0),m=json(K.m),e={id:'rem:'+g.id,type:'HUMAN_REQUIRED',episodeId:g.id,reason:g.reason||'',chat:g.chat};
+  const reminderStore=scoped(K.m),legacy=json(K.m),age=now()-Number(g.since||0),m=json(reminderStore),e={id:'rem:'+g.id,type:'HUMAN_REQUIRED',episodeId:g.id,reason:g.reason||'',chat:g.chat};
   for(const [tag,ms] of [['15m',900000],['60m',3600000]]){
     const rk=g.id+':'+tag;
-    if(age<ms||m[rk]||reminderPending.has(rk))continue;
+    if(age<ms||m[rk]||legacy[rk]||reminderPending.has(rk))continue;
     reminderPending.add(rk);
-    send(e,{key:'reminder:'+rk,rem:true}).then(ok=>{if(ok){const mm=json(K.m);mm[rk]=now();put(K.m,mm)}}).finally(()=>reminderPending.delete(rk))
+    send(e,{key:'reminder:'+rk,rem:true}).then(ok=>{if(ok){const mm=json(reminderStore);mm[rk]=now();put(reminderStore,mm)}}).finally(()=>reminderPending.delete(rk))
   }
 }
 
 window.__ghostPlusAlerts?.subscribe?.(e=>send(e));
-setTimeout(()=>syncCurrentGate(true),1000);
+setTimeout(()=>{syncCurrentGate(true);drainOutbox()},1000);
 setInterval(syncCurrentGate,10000);
+setInterval(drainOutbox,5000);
 setInterval(reminders,60000);setInterval(render,1500);ui();render();
-window.__ghostPlusTelegram={getMe,test,bind,send,forget,threadId:thread,maskedToken:maskToken,syncCurrentGate};
+window.__ghostPlusTelegram={getMe,test,bind,send,forget,threadId:thread,maskedToken:maskToken,syncCurrentGate,drainOutbox};
 })();

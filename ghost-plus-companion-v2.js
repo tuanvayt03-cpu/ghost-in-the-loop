@@ -74,6 +74,10 @@ function panel() { return q('#gitl9'); }
 function ghostStatus() { return norm(q('#gitl9 .status')?.innerText || ''); }
 function ghostRunning() { return /^RUNNING\b/i.test(ghostStatus()); }
 function ghostUncertain() { return /UNCERTAIN/i.test(ghostStatus()); }
+function operatorLocked() { return !!window.__ghostPlusSupervisor?.isLocked?.(); }
+function signal(type, severity, title, text, extra = {}) {
+  try { window.__ghostPlusAlerts?.emit?.({ type, severity, title, text, ...extra }); } catch (_) {}
+}
 function ghostStop() { return q('#gitl9 [data-a="stop"]'); }
 function ghostPlay() { return q('#gitl9 [data-a="play"]'); }
 function composer() { return q('#prompt-textarea') || q('textarea[data-id="root"]'); }
@@ -355,7 +359,7 @@ function contextBoundaryActive() {
 }
 
 async function recover(snap) {
-  if (S.recovering || !ghostRunning() || ghostUncertain()) return;
+  if (S.recovering || !ghostRunning() || ghostUncertain() || operatorLocked()) return;
   const fresh = captureSnapshot();
   if (fresh.busy.busy) {
     S.suspectAt = 0;
@@ -369,7 +373,9 @@ async function recover(snap) {
     S.suspectAt = now(); return;
   }
   if (S.recoveryCount >= S.recoveryBudget) {
-    notice('Ghost+ watchdog', `Đã hết recovery budget (${S.recoveryBudget}). Cần kiểm tra thủ công.`);
+    const msg = `Đã hết recovery budget (${S.recoveryBudget}). Cần kiểm tra thủ công.`;
+    signal('RECOVERY_EXHAUSTED', 'critical', 'Ghost+ watchdog', msg, { group:'recovery', reason:msg });
+    notice('Ghost+ watchdog', msg);
     S.suspectAt = now(); return;
   }
   if (composerText()) {
@@ -545,12 +551,14 @@ function sample() {
     const stale = now() - S.lastProgressAt;
     if (stale >= CFG.staleBusyWarnMs && now() - S.staleBusyNotifiedAt >= CFG.staleBusyWarnMs) {
       S.staleBusyNotifiedAt = now();
-      notice('Ghost+ watchdog', `ChatGPT vẫn báo BUSY nhưng ${Math.round(stale/60000)} phút chưa có meaningful progress. Chỉ cảnh báo, không Stop/recovery.`);
+      const msg = `ChatGPT vẫn báo BUSY nhưng ${Math.round(stale/60000)} phút chưa có meaningful progress. Chỉ cảnh báo, không Stop/recovery.`;
+      signal('STALL_WARNING', 'warning', 'Ghost+ watchdog', msg, { group:'stall', reason:msg });
+      notice('Ghost+ watchdog', msg);
     }
     render(snap); return;
   }
 
-  if (!ghostRunning() || S.timeout===0 || S.recovering) {
+  if (operatorLocked() || !ghostRunning() || S.timeout===0 || S.recovering) {
     S.suspectAt = 0; render(snap); return;
   }
 

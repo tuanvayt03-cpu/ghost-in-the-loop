@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.10`.
+Current loader version: `9.0.0-alpha.2+ghostplus.14`.
 
 ## Added behavior
 
@@ -85,3 +85,17 @@ Ghost+ does not edit local files, call shell commands, access secrets, or blindl
 ## Tampermonkey install
 
 Open the raw `ghost-plus.user.js` file from this repository and install/update it with Tampermonkey. Keep only this Ghost+ loader enabled to avoid two independent Ghost controllers on the same ChatGPT page.
+
+
+## v0.14 release
+
+Ghost+ v0.14 separates responsibilities cleanly:
+
+- Ghost handles one active chat/job: core continuation, BUSY/idle recovery, uncertain-send reconciliation, persistent operator gates, local alerts and Telegram push.
+- The separate Night Watchdog project is intentionally not part of this repository or runtime.
+- HUMAN, MODEL RELAY, AUTH ERROR, RECOVERY EXHAUSTED and CONTEXT BOUNDARY are operator-gated states.
+- While a gate is locked, Web Recovery and the Ghost watchdog early-exit and programmatic Play is blocked.
+- Recovery exhaustion can be resumed only by a trusted operator action; that action resets only the exhausted recovery episode.
+- Telegram is notification-only. It cannot resume Ghost, clear a gate or modify execution state.
+- Telegram group binding polls only during the explicit 60-second bind window. Normal runtime is push-only.
+- Release loader pins runtime modules to reviewed commit `1c8d72b682ef3a21e6b271d91e191e17c23d958e` and updates from `main`.

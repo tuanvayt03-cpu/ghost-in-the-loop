@@ -48,6 +48,10 @@ function ghostPaused() { return /^PAUSED\b/i.test(ghostStatus()); }
 function ghostUncertain() { return /PLAY-SEND-UNCERTAIN|UNCERTAIN/i.test(ghostStatus()); }
 function ghostStop() { return q('#gitl9 [data-a="stop"]'); }
 function ghostPlay() { return q('#gitl9 [data-a="play"]'); }
+function operatorLocked() { return !!window.__ghostPlusSupervisor?.isLocked?.(); }
+function signal(type, severity, title, text, extra = {}) {
+  try { window.__ghostPlusAlerts?.emit?.({ type, severity, title, text, ...extra }); } catch (_) {}
+}
 function composer() { return q('#prompt-textarea') || q('textarea[data-id="root"]'); }
 function composerText() {
   const el = composer();
@@ -228,12 +232,21 @@ async function wait(pred, ms) {
 
 async function sendRecoveryProbe(snap) {
   if (S.recovering || !snap.active) return;
+  if (operatorLocked()) {
+    renderWebState(snap, 'Operator Gate đang LOCKED; bỏ qua web recovery.');
+    return;
+  }
   if (GM_getValue(K.auto, true) === false) return;
   if (snap.blockedType) {
     const msg = snap.error.type === 'RATE_LIMIT'
       ? 'Phát hiện rate limit. Ghost+ không tự gửi thêm request; cần chờ/backoff.'
       : 'Phát hiện lỗi xác thực. Ghost+ không tự recovery; cần người dùng xử lý đăng nhập/quyền.';
-    notice('Ghost+ web supervisor', msg);
+    if (snap.error.type === 'AUTH_ERROR' && window.__ghostPlusSupervisor?.lock) {
+      window.__ghostPlusSupervisor.lock('AUTH_ERROR', { reason:snap.error.text || msg });
+    } else {
+      signal(snap.error.type, 'warning', 'Ghost+ web supervisor', msg, { group:'hard-error', reason:snap.error.text || msg });
+      notice('Ghost+ web supervisor', msg);
+    }
     renderWebState(snap, msg);
     S.attemptedThisEpisode = true;
     return;
@@ -303,6 +316,12 @@ function sample() {
   ensureUi();
   const snap = faultSnapshot();
   renderWebState(snap);
+  if (operatorLocked()) {
+    S.recovering = false;
+    S.faultSeenAt = 0;
+    renderWebState(snap, 'Operator Gate đang LOCKED; Web Recovery ngủ.');
+    return;
+  }
 
   if (!snap.active) {
     if (!S.clearSince) S.clearSince = now();

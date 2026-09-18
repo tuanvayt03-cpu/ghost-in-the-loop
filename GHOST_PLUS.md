@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.14.3`.
+Current loader version: `9.0.0-alpha.2+ghostplus.14.4`.
 
 ## Added behavior
 
@@ -125,3 +125,12 @@ Ghost+ v0.14 separates responsibilities cleanly:
 - Programmatic composer writes preserve any non-collapsed text selection outside the composer.
 - Operator Gate no longer focuses the composer merely to clear a blocked recovery draft.
 - Release-runtime audit found no global mouse/pointer/select-start interception. The only global capture click guard is scoped to the Ghost Play button while an Operator Gate is locked.
+
+
+## v0.14.4 Telegram gate reconciliation
+
+- Telegram subscribes before Operator Gate initialization so a HUMAN gate created during page startup is not emitted into an empty subscriber set.
+- Telegram also reconciles the current persistent Operator Gate after startup and periodically thereafter.
+- A missed HUMAN / RELAY / CONTEXT / AUTH / RECOVERY gate is sent using the same episode key as the live event, so successful live delivery and backfill cannot intentionally create a duplicate.
+- In-flight event keys are deduplicated so concurrent live emission and reconciliation cannot queue the same Telegram alert twice.
+- Failed current-gate delivery can retry after a bounded cooldown without changing or clearing the gate.

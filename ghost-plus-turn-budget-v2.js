@@ -79,6 +79,9 @@ function budgetContract(){
 function composer(){ return q('#prompt-textarea') || q('textarea[data-id="root"]'); }
 function composerText(el=composer()){ return norm(el?.innerText ?? el?.textContent ?? el?.value ?? ''); }
 function usersCount(){ return qa('[data-message-author-role="user"]').filter(el=>el.isConnected).length; }
+function ghostRunning(){
+  return /^RUNNING\b/i.test(norm(q('#gitl9 .status')?.textContent||''));
+}
 function generating(){
   const sels=['button[data-testid="stop-button"]','button[aria-label="Stop generating"]','button[aria-label="Stop streaming"]','button[aria-label*="Dừng" i]'];
   for (const sel of sels){
@@ -200,7 +203,11 @@ function renderUi(){
   cleanupStaleInjectedDraft();
   const row=ensureUi(); if(!row) return;
   const minutes=budgetMinutes();
-  const startedAt=Number(GM_getValue(K.startedAt,0))||0;
+  let startedAt=Number(GM_getValue(K.startedAt,0))||0;
+  if(startedAt && !ghostRunning() && !T.injectedText){
+    GM_setValue(K.startedAt,0);
+    startedAt=0;
+  }
   const elapsed=startedAt?Math.max(0,now()-startedAt):0;
   const limit=minutes*60000;
   const state=q('[data-budget-state]',row), elapsedEl=q('[data-budget-elapsed]',row), dot=q('[data-budget-dot]',row);

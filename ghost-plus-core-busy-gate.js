@@ -1,5 +1,6 @@
 (() => {
 'use strict';
+const RT=window.__ghostPlusRuntime?.module('core-busy-gate');if(!RT)return;
 if (window.__GHOST_PLUS_CORE_BUSY_GATE__) return;
 window.__GHOST_PLUS_CORE_BUSY_GATE__ = true;
 if (!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname)) return;
@@ -99,6 +100,6 @@ function tick() {
   else removeSentinel();
 }
 
-setInterval(tick, 500);
+RT.interval(tick,500);RT.cleanup(removeSentinel);
 tick();
 })();

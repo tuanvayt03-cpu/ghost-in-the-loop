@@ -1,5 +1,6 @@
 (() => {
 'use strict';
+const RT=window.__ghostPlusRuntime?.module('web-recovery');if(!RT)return;
 if (window.__GHOST_PLUS_WEB_RECOVERY__) return;
 window.__GHOST_PLUS_WEB_RECOVERY__ = true;
 if (!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname)) return;
@@ -30,7 +31,7 @@ const S = {
 
 const q = (s, r = document) => r.querySelector(s);
 const qa = (s, r = document) => [...r.querySelectorAll(s)];
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+const sleep = ms => RT.sleep(ms);
 const now = () => Date.now();
 function captureExternalSelection(el) {
   try {
@@ -200,7 +201,7 @@ function ensureUi() {
     row.id = 'ghostplus-web-state';
     row.style.cssText = 'margin-top:5px;padding-top:5px;border-top:1px solid rgba(148,163,184,.25);font-size:10px;line-height:1.35';
     row.innerHTML = '<div><b>Lỗi web:</b> <span data-web-state>không</span></div><div data-web-detail style="color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>';
-    host.appendChild(row);
+    host.appendChild(row);RT.node(row);
   }
 }
 function renderWebState(snap = faultSnapshot(), text = '') {
@@ -264,20 +265,20 @@ async function setComposerText(text) {
     }
   } catch (_) { return false; }
   finally { restoreExternalSelection(preservedSelection); }
-  await sleep(150);
+  await sleep(150);if(!RT.alive())return false;
   return norm(composerText()) === expected;
 }
 async function wait(pred, ms) {
   const started = now();
   while (now() - started < ms) {
     try { if (pred()) return true; } catch (_) {}
-    await sleep(250);
+    await sleep(250);if(!RT.alive())return false;
   }
   return false;
 }
 
 async function sendRecoveryProbe(snap) {
-  if (S.recovering || !snap.active) return;
+  if (!RT.alive() || S.recovering || !snap.active) return;
   if (operatorLocked()) {
     renderWebState(snap, 'Operator Gate đang LOCKED; bỏ qua web recovery.');
     return;
@@ -322,16 +323,18 @@ async function sendRecoveryProbe(snap) {
     requireHuman(snap,'Không reset được Ghost controller: '+String(e?.message||e));
     return;
   }
-  await sleep(120);
+  await sleep(120);if(!RT.alive()){S.recovering=false;return}
 
   const prompt = recoveryPrompt(snap);
-  if (!await setComposerText(prompt)) {
+  if (!await setComposerText(prompt) || !RT.alive()) {
+    if(!RT.alive()){S.recovering=false;return}
     requireHuman(snap,'Không stage được status probe an toàn. Không gửi; cần kiểm tra thủ công.');
     return;
   }
 
   const beforeUsers = users().length;
   const beforeAssistants = assistants().length;
+  if(!RT.alive()){S.recovering=false;return}
   try { gp.click(); } catch (e) {
     requireHuman(snap,'Không khởi động được Ghost recovery: '+String(e?.message||e));
     return;
@@ -341,6 +344,7 @@ async function sendRecoveryProbe(snap) {
     () => generating() || users().length > beforeUsers || assistants().length > beforeAssistants || /^RUNNING\b/i.test(ghostStatus()),
     CFG.sendVerifyMs
   );
+  if(!RT.alive()){S.recovering=false;return}
 
   S.attemptedThisEpisode = true;
   S.lastFaultKey = snap.key;
@@ -401,7 +405,7 @@ function sample() {
   });
 }
 
-clearInterval(S.timer);
-S.timer = setInterval(sample, CFG.tickMs);
+RT.clearInterval(S.timer);
+S.timer = RT.interval(sample, CFG.tickMs);RT.cleanup(()=>{S.recovering=false;S.timer=null});
 sample();
 })();

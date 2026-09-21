@@ -29,6 +29,7 @@
 
 (() => {
 'use strict';
+const RT=window.__ghostPlusRuntime?.module('core');if(!RT)return;
 if (window.__GITL_V9__ === true) return;
 if (window.__GITL_V9_BOOTING__ && Date.now() - window.__GITL_V9_BOOTING__ < 15000) return;
 window.__GITL_V9_BOOTING__ = Date.now();
@@ -108,7 +109,7 @@ let custom = String(GM_getValue('v9.custom', '') || '');
 let _ttPolicy = null;
 try { if (window.trustedTypes?.createPolicy) _ttPolicy = window.trustedTypes.createPolicy('gitl9-ui', { createHTML: s => s }); } catch (_) {}
 const trustedHTML = s => _ttPolicy ? _ttPolicy.createHTML(s) : s;
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+const sleep = ms => RT.sleep(ms);
 const now = () => Date.now();
 const displayText = value => String(value ?? '').replace(/\u00a0/g, ' ').replace(/\r/g, '').trim();
 const semanticText = value => displayText(value).replace(/\s+/g, ' ').trim();
@@ -304,7 +305,7 @@ async function setComposerText(text) {
 
   const started = now(); let observed = '';
   while (now() - started < WRITE_VERIFY_MS) {
-    await sleep(75); el = composer(); if (!el) continue;
+    await sleep(75); if(!RT.alive()) return {ok:false,why:'runtime-destroyed'}; el = composer(); if (!el) continue;
     observed = semanticText(nodeText(el));
     if (observed === expected) return { ok: true, el };
   }
@@ -322,7 +323,7 @@ async function waitForSendButton(el) {
   const started = now();
   while (now() - started < SEND_WAIT_MS) {
     const btn = localSendButton(composer() || el); if (btn) return btn;
-    await sleep(100);
+    await sleep(100); if(!RT.alive()) return null;
   }
   return null;
 }
@@ -335,21 +336,23 @@ async function confirmSend(beforeUsers, beforeComposer, beforeAssistantHash) {
     if (el && beforeComposer && semanticText(nodeText(el)) === '') return { ok: true, why: 'composer-cleared' };
     const currentAssistant = assistantText();
     if (beforeAssistantHash && currentAssistant && hash(currentAssistant) !== beforeAssistantHash) return { ok: true, why: 'assistant-changed' };
-    await sleep(250);
+    await sleep(250); if(!RT.alive()) return {ok:false,why:'runtime-destroyed'};
   }
   return { ok: false, why: 'unconfirmed' };
 }
 
 async function sendOnce(text, reason) {
-  if (S.mode !== 'RUNNING' || S.sending || S.uncertain) return false;
+  if (!RT.alive() || S.mode !== 'RUNNING' || S.sending || S.uncertain) return false;
   S.sending = true; S.detail = `Staging ${reason}...`; render();
   const beforeUsers = userCount();
   const beforeAssistantHash = hash(assistantText());
   const staged = await setComposerText(text);
+  if(!RT.alive())return false;
   if (!staged.ok) {
     S.sending = false; fail('PLAY-WRITE', `Could not reliably stage the prompt (${staged.why}).`, staged); return false;
   }
   const button = await waitForSendButton(staged.el);
+  if(!RT.alive())return false;
   if (!button) {
     S.sending = false; fail('PLAY-SEND', 'Prompt is staged, but the current host Send control did not become available.', { host: HOST.id }); return false;
   }
@@ -361,6 +364,7 @@ async function sendOnce(text, reason) {
     fail('PLAY-SEND-THREW', 'Send threw after actuation. Ghost stopped to prevent a duplicate.', { message: String(error?.message || error) }); return false;
   }
   const confirmed = await confirmSend(beforeUsers, beforeComposer, beforeAssistantHash);
+  if(!RT.alive())return false;
   S.sending = false;
   if (!confirmed.ok) {
     S.uncertain = true; fail('PLAY-SEND-UNCERTAIN', 'Send was attempted but host acceptance could not be confirmed. Ghost will not resend.'); return false;
@@ -451,16 +455,16 @@ async function play() {
     S.bootstrapped = true;
     if (!await sendOnce(bootstrapPrompt('Continue the existing task from this conversation without restarting or repeating completed work.'), 'arm existing chat')) return;
   }
-  clearInterval(S.timer);
-  S.timer = setInterval(() => { tick().catch(error => fail('PLAY-TICK', String(error?.message || error))); }, TICK_MS);
+  RT.clearInterval(S.timer);
+  S.timer = RT.interval(() => { tick().catch(error => fail('PLAY-TICK', String(error?.message || error))); }, TICK_MS);
   await tick();
 }
-function pause(detail) { S.mode = 'PAUSED'; S.detail = detail; clearInterval(S.timer); S.timer = null; render(); }
+function pause(detail) { S.mode = 'PAUSED'; S.detail = detail; RT.clearInterval(S.timer); S.timer = null; render(); }
 function stop() {
   S.mode = 'IDLE'; S.detail = 'Stopped'; S.sending = false; S.uncertain = false; S.lastHandled = ''; S.awaitingFrom = ''; S.stableHash = ''; S.stableSince = 0; S.drift = 0;
-  clearInterval(S.timer); S.timer = null; log('stop'); render();
+  RT.clearInterval(S.timer); S.timer = null; log('stop'); render();
 }
-function complete(detail) { S.mode = 'COMPLETE'; S.detail = detail; clearInterval(S.timer); S.timer = null; render(); }
+function complete(detail) { S.mode = 'COMPLETE'; S.detail = detail; RT.clearInterval(S.timer); S.timer = null; render(); }
 
 function domTurns() {
   const rows = [];
@@ -530,10 +534,11 @@ function markdown(cap) {
 }
 function download(name, text, type) {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name;
-  document.documentElement.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  document.documentElement.appendChild(a); a.click(); RT.timeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
 }
 async function doExport(kind) {
-  S.detail = 'Capturing export...'; render(); const cap = await captureExport();
+  if(!RT.alive())return;
+  S.detail = 'Capturing export...'; render(); const cap = await captureExport(); if(!RT.alive())return;
   if (!cap.turns.length && !cap.raw) { S.detail = 'Export found no conversation data.'; render(); return; }
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   if (kind === 'copy') {
@@ -563,18 +568,22 @@ function copyReport() {
 
 const style = document.createElement('style');
 style.textContent = `#gitl9{position:fixed;z-index:2147483646;top:70px;right:8px;width:min(270px,calc(100vw - 16px));background:#17161a;color:#eee;border:1px solid #45414b;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.4);font:12px/1.35 system-ui,sans-serif;padding:8px}#gitl9 *{box-sizing:border-box}#gitl9 .head{display:flex;align-items:center;justify-content:space-between;gap:6px}#gitl9 .brand{font-weight:750}#gitl9 .meta{font-size:10px;opacity:.65}#gitl9 .tabs{display:flex;gap:4px;margin:7px 0}#gitl9 button{border:1px solid #494550;background:#26242b;color:#eee;border-radius:8px;padding:7px 6px;font:inherit}#gitl9 button.on{background:#0c4434;border-color:#178063}#gitl9 button.stop{background:#46191d;border-color:#85333a}#gitl9 .tabs button{flex:1;padding:5px 3px}#gitl9 .status{background:#0f0e11;border-radius:8px;padding:7px;min-height:42px;margin:5px 0 7px;word-break:break-word}#gitl9 .row{display:flex;gap:5px}#gitl9 .row>*{flex:1;min-width:0}#gitl9 .grid{display:grid;grid-template-columns:1fr 1fr;gap:5px}#gitl9 label{display:flex;align-items:center;gap:5px;padding:5px;border:1px solid #35323a;border-radius:7px;background:#201e24}#gitl9 input[type="text"],#gitl9 input[type="number"]{width:100%;background:#0f0e11;color:#eee;border:1px solid #45414b;border-radius:7px;padding:6px}#gitl9 .pane{display:none}#gitl9 .pane.show{display:block}#gitl9 .tiny{font-size:10px;opacity:.7;margin-top:5px}@media(max-width:520px){#gitl9{top:58px;width:min(238px,calc(100vw - 12px));right:6px;padding:7px}#gitl9 button{padding:6px 4px}}`;
-document.documentElement.appendChild(style);
-const panel = document.createElement('div'); panel.id = 'gitl9'; (document.body || document.documentElement).appendChild(panel);
+document.documentElement.appendChild(style);RT.node(style);
+const panel = document.createElement('div'); panel.id = 'gitl9'; (document.body || document.documentElement).appendChild(panel);RT.node(panel);
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function render() {
+  if(!RT.alive())return;
+  const rd=window.__ghostPlusRuntime?.diagnostics?.();
+  const rtCount=rd?Object.values(rd.totals||{}).reduce((a,b)=>a+Number(b||0),0):0;
   panel.innerHTML = trustedHTML(`
     <div class="head"><span class="brand">👻 GHOST</span><span class="meta">${esc(HOST.id)} · ${VER}</span></div>
     <div class="tabs"><button data-tab="play" class="${S.tab==='play'?'on':''}">Play</button><button data-tab="aoa" class="${S.tab==='aoa'?'on':''}">AoA</button><button data-tab="export" class="${S.tab==='export'?'on':''}">Export</button></div>
     <div class="status"><b>${esc(S.mode)}</b> · round ${S.round}/${S.max}<br>${esc(S.detail)}</div>
     <div class="pane ${S.tab==='play'?'show':''}" data-pane="play">
       <div class="row"><button class="on" data-a="play">▶ Play</button><button class="stop" data-a="stop">■ Stop</button><button data-a="reload">↻ Page</button></div>
-      <div class="row" style="margin-top:5px"><input data-max type="number" min="1" max="100" value="${S.max}"><button data-a="report">Copy report</button></div>
+      <div class="row" style="margin-top:5px"><input data-max type="number" min="1" max="100" value="${S.max}"><button data-a="report">Copy report</button><button class="stop" data-a="unload">⏏ Unload</button></div>
       <div class="tiny">Core only: final control line → one Send → repeat. No automatic resend after an uncertain Send.</div>
+      <div class="tiny" data-runtime>runtime G${rd?.generation||'?'} · resources ${rtCount}</div>
     </div>
     <div class="pane ${S.tab==='aoa'?'show':''}" data-pane="aoa">
       <div class="grid">${Object.entries(ACT).map(([k,v])=>`<label><input type="checkbox" data-act="${k}" ${ON[k]?'checked':''}>${esc(v[0])}</label>`).join('')}</div>
@@ -585,19 +594,32 @@ function render() {
       <div class="row"><button data-a="copy">Copy MD</button><button data-a="md">Save MD</button><button data-a="json">Save JSON</button></div>
       <div class="tiny">API-first where supported; DOM fallback is explicitly marked partial.</div>
     </div>`);
-  panel.querySelectorAll('[data-tab]').forEach(btn => btn.addEventListener('click', () => { S.tab = btn.dataset.tab; GM_setValue('v9.tab', S.tab); render(); }));
-  panel.querySelector('[data-a="play"]')?.addEventListener('click', () => play().catch(e => fail('PLAY', String(e?.message || e))));
-  panel.querySelector('[data-a="stop"]')?.addEventListener('click', stop);
-  panel.querySelector('[data-a="reload"]')?.addEventListener('click', () => location.reload());
-  panel.querySelector('[data-a="report"]')?.addEventListener('click', copyReport);
-  panel.querySelector('[data-a="copy"]')?.addEventListener('click', () => doExport('copy'));
-  panel.querySelector('[data-a="md"]')?.addEventListener('click', () => doExport('md'));
-  panel.querySelector('[data-a="json"]')?.addEventListener('click', () => doExport('json'));
-  panel.querySelector('[data-max]')?.addEventListener('change', e => { S.max = Math.max(1, Math.min(100, Number(e.target.value) || 25)); GM_setValue('v9.max', S.max); render(); });
-  panel.querySelectorAll('[data-act]').forEach(box => box.addEventListener('change', () => { ON[box.dataset.act] = box.checked; GM_setValue(`v9.act.${box.dataset.act}`, box.checked); S.detail = `${ACT[box.dataset.act][0]} ${box.checked?'enabled':'disabled'} for the next injected prompt.`; render(); }));
-  panel.querySelector('[data-custom]')?.addEventListener('change', e => { custom = String(e.target.value || '').trim(); GM_setValue('v9.custom', custom); S.detail = custom ? 'Custom AoA path saved.' : 'Custom AoA path cleared.'; render(); });
-}
 
+}
+RT.listen(panel,'click',e=>{
+  const target=e.target instanceof Element?e.target.closest('button,[data-tab]'):null;
+  if(!target||!panel.contains(target))return;
+  const tab=target.getAttribute('data-tab');
+  if(tab){S.tab=tab;GM_setValue('v9.tab',S.tab);render();return}
+  const a=target.getAttribute('data-a');
+  if(!a)return;
+  if(a==='play'){play().catch(err=>{if(RT.alive())fail('PLAY',String(err?.message||err))});return}
+  if(a==='stop'){stop();return}
+  if(a==='reload'){location.reload();return}
+  if(a==='report'){copyReport();return}
+  if(a==='copy'){doExport('copy');return}
+  if(a==='md'){doExport('md');return}
+  if(a==='json'){doExport('json');return}
+  if(a==='unload'&&e.isTrusted){window.__ghostPlusRuntime?.destroy?.('operator-unload');return}
+});
+RT.listen(panel,'change',e=>{
+  const el=e.target;
+  if(!(el instanceof Element))return;
+  if(el.matches('[data-max]')){S.max=Math.max(1,Math.min(100,Number(el.value)||25));GM_setValue('v9.max',S.max);render();return}
+  if(el.matches('[data-act]')){const k=el.dataset.act;ON[k]=el.checked;GM_setValue(`v9.act.${k}`,el.checked);S.detail=`${ACT[k][0]} ${el.checked?'enabled':'disabled'} for the next injected prompt.`;render();return}
+  if(el.matches('[data-custom]')){custom=String(el.value||'').trim();GM_setValue('v9.custom',custom);S.detail=custom?'Custom AoA path saved.':'Custom AoA path cleared.';render()}
+});
+RT.cleanup(()=>{S.mode='IDLE';S.sending=false;S.uncertain=false;S.timer=null});
 render();
 window.__GITL_V9__ = true;
 try { delete window.__GITL_V9_BOOTING__; } catch (_) { window.__GITL_V9_BOOTING__ = 0; }

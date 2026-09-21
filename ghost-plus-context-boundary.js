@@ -1,5 +1,6 @@
 (() => {
 'use strict';
+const RT=window.__ghostPlusRuntime?.module('context-boundary');if(!RT)return;
 if (window.__GHOST_PLUS_CONTEXT_BOUNDARY__) return;
 window.__GHOST_PLUS_CONTEXT_BOUNDARY__ = true;
 if (!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname)) return;
@@ -54,7 +55,7 @@ function ensureUi(text = '') {
     row = document.createElement('div');
     row.id = 'ghostplus-context-boundary-state';
     row.style.cssText = 'margin-top:5px;padding-top:5px;border-top:1px solid rgba(239,68,68,.25);font-size:10px;line-height:1.35;color:#991b1b';
-    host.appendChild(row);
+    host.appendChild(row);RT.node(row);
   }
   row.innerHTML = text
     ? '<b>Giới hạn context:</b> ĐÃ CHẠM · Ghost đã dừng. Cần chuyển sang chat mới thủ công.'
@@ -106,6 +107,5 @@ function sample() {
   }
 }
 
-setInterval(sample, 500);
-sample();
+RT.interval(sample,500);sample();
 })();

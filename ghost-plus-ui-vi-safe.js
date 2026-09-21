@@ -1,5 +1,6 @@
 (() => {
 'use strict';
+const RT=window.__ghostPlusRuntime?.module('ui-vi');if(!RT)return;
 if (window.__GHOST_PLUS_VI_SAFE__) return;
 window.__GHOST_PLUS_VI_SAFE__ = true;
 
@@ -15,7 +16,8 @@ style.textContent = `
 #gitl9 [data-a="report"],
 #gitl9 [data-a="copy"],
 #gitl9 [data-a="md"],
-#gitl9 [data-a="json"] { font-size: 0 !important; }
+#gitl9 [data-a="json"],
+#gitl9 [data-a="unload"] { font-size: 0 !important; }
 
 #gitl9 [data-tab="play"]::after { content: "Chạy"; font-size: 12px; }
 #gitl9 [data-tab="export"]::after { content: "Xuất"; font-size: 12px; }
@@ -26,12 +28,14 @@ style.textContent = `
 #gitl9 [data-a="copy"]::after { content: "Sao chép MD"; font-size: 12px; }
 #gitl9 [data-a="md"]::after { content: "Lưu MD"; font-size: 12px; }
 #gitl9 [data-a="json"]::after { content: "Lưu JSON"; font-size: 12px; }
+#gitl9 [data-a="unload"]::after { content: "⏏ Gỡ khỏi tab"; font-size: 12px; }
 
-#gitl9 [data-pane="play"] > .tiny,
+#gitl9 [data-pane="play"] > .tiny:not([data-runtime]),
 #gitl9 [data-pane="aoa"] > .tiny,
 #gitl9 [data-pane="export"] > .tiny { font-size: 0 !important; }
+#gitl9 [data-runtime]{font-size:10px!important;opacity:.72!important}
 
-#gitl9 [data-pane="play"] > .tiny::after {
+#gitl9 [data-pane="play"] > .tiny:not([data-runtime])::after {
   content: "Cơ chế lõi: đọc dòng điều khiển cuối → gửi đúng một lần → lặp. Không tự gửi lại khi trạng thái gửi chưa chắc chắn.";
   font-size: 10px;
 }
@@ -47,5 +51,5 @@ style.textContent = `
 /* Watchdog controls are already rendered directly in Vietnamese by ghost-plus-companion.js.
    Do not rewrite them here; this file remains visual-only and side-effect free. */
 `;
-(document.head || document.documentElement).appendChild(style);
+(document.head || document.documentElement).appendChild(style);RT.node(style);
 })();

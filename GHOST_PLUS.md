@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.14.6`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.0`.
 
 ## Added behavior
 
@@ -165,3 +165,41 @@ Ghost+ v0.14 separates responsibilities cleanly:
 - Uncertain reconciliation checks the cheap uncertain-state predicate before reading assistant text.
 - Ghost-managed composer writes use focus({preventScroll:true}) where supported so prompt staging cannot pull the viewport to the composer.
 - Core no longer rebuilds the whole Ghost panel once per second while a continuous BUSY state remains unchanged.
+
+
+## v0.15 runtime lifecycle
+
+Ghost+ v0.15 introduces a generation-owned Runtime Manager. The manager is the first loader module and owns all long-lived runtime resources created by Ghost+.
+
+- Every module acquires a named runtime scope.
+- Intervals, timeouts, sleeps, listeners, abortable Telegram requests, DOM nodes and global patches are registered to that scope.
+- A new runtime generation destroys the previous active generation before booting.
+- `destroy()` invalidates the generation first, then clears resources, aborts requests, restores global patches, removes Ghost DOM and clears runtime APIs.
+- Persistent operator-gate state, Telegram configuration and Telegram outbox data stay in GM storage and are not deleted by unload.
+- Turn Budget's `HTMLButtonElement.prototype.click` wrapper is restored on destroy.
+- Alert Router restores its `GM_notification` wrapper on destroy.
+- Telegram bind/network requests are aborted on destroy and its alert subscription is unsubscribed.
+- Core UI uses two delegated listeners instead of attaching a new listener set on every render.
+- Async recovery/send paths check the runtime generation after waits before any later side effect.
+
+### Unload from the current tab
+
+Use **Gỡ khỏi tab** in the Ghost panel to destroy the active Ghost runtime immediately without refreshing the page. The panel and Ghost+ UI are removed and runtime-owned callbacks stop.
+
+Tampermonkey disabling cannot notify JavaScript that has already executed in an existing tab. Therefore:
+- disabling the userscript prevents future injection;
+- to clean an already-running v0.15 instance immediately, use **Gỡ khỏi tab**;
+- **OFF + refresh** remains a valid hard reset.
+
+When upgrading from v0.14.6 or older to v0.15, refresh each already-open ChatGPT tab once. Pre-v0.15 instances did not expose their timer/listener handles to the Runtime Manager and cannot be reliably reclaimed in-place.
+
+### Diagnostics
+
+While Ghost is loaded:
+- the Play pane shows `runtime G<n> · resources <count>`;
+- `window.__ghostPlusRuntime.diagnostics()` returns per-module resource counts;
+- after destroy, `window.__ghostPlusRuntimeLastDiagnostics` stores the final snapshot. All resource counters should be zero.
+
+### Viewport invariant
+
+Ghost monitoring does not own ChatGPT viewport state. Runtime modules must not introduce wheel/mousewheel/touchmove/selectstart interception, `scrollIntoView`, `scrollTo`, `scrollBy`, or body/html overflow locking. Programmatic composer focus must use `focus({preventScroll:true})`.

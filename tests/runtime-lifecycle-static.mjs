@@ -13,6 +13,8 @@ const modules=[
 const read=f=>fs.readFileSync(path.join(root,f),'utf8');
 const manager=read('ghost-plus-runtime-manager.js');
 const loader=read('ghost-plus.user.js');
+const watchdog=read('ghost-plus-companion-v2.js');
+const budget=read('ghost-plus-turn-budget-v2.js');
 
 assert.match(manager,/previous\.destroy\('reinject'\)/);
 assert.match(manager,/removeEventListener/);
@@ -20,7 +22,7 @@ assert.match(manager,/h\.abort\(\)/);
 assert.match(manager,/Object\.defineProperty\(p\.obj,p\.key,p\.desc\)/);
 assert.match(manager,/ghostplusLastDiagnostics/);
 assert.match(manager,/allZero:Object\.values\(totals\)\.every/);
-assert.match(loader,/ghostplus\.15\.1/);
+assert.match(loader,/ghostplus\.15\.2/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);
@@ -49,3 +51,11 @@ for(const file of ['ghost-in-the-loop.user.js','ghost-plus-operator-gate.js','gh
   assert.match(read(file),/preventScroll:true/,`${file}: composer focus must prevent scroll`);
 }
 console.log('Ghost+ runtime lifecycle static audit: PASS');
+
+assert.match(watchdog,/tickMs:\s*2000/,'watchdog BUSY polling must stay throttled');
+assert.match(watchdog,/deepScanMs:\s*5000/,'watchdog deep scan cadence regressed');
+assert.match(watchdog,/if \(stops\.length \|\| square\)/,'strong BUSY short-circuit missing');
+assert.match(watchdog,/last\?\.textContent \|\| ''/,'BUSY assistant hash must avoid innerText');
+assert.doesNotMatch(watchdog,/last\?\.innerText/,'BUSY assistant hash must not use innerText');
+assert.match(watchdog,/now\(\)-S\.lastLayoutAt < CFG\.layoutMs/,'watchdog layout throttle missing');
+assert.match(budget,/if\(startedAt && !ghostRunning\(\) && !T\.injectedText\)/,'stale Turn Budget reset missing');

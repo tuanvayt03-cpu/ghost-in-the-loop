@@ -6,7 +6,9 @@ window.__GHOST_PLUS_SMART__ = true;
 if (!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname)) return;
 
 const CFG = Object.freeze({
-  tickMs: 1000,
+  tickMs: 2000,
+  deepScanMs: 5000,
+  layoutMs: 5000,
   graceMs: 30000,
   settleMs: 5000,
   staleBusyWarnMs: 10 * 60 * 1000,
@@ -94,6 +96,9 @@ const S = {
   lastRecoveryKey: '',
   recoveryBaselineAssistantHash: '',
   staleBusyNotifiedAt: 0,
+  lastDeepAt: 0,
+  lastLayoutAt: 0,
+  lastViewportWidth: 0,
   timer: null
 };
 GM_setValue(K.timeout, S.timeout);
@@ -193,12 +198,12 @@ function pendingTexts() {
     if (!t || t.length > 240 || !PENDING_RE.test(t) || seen.has(t)) return;
     seen.add(t); out.push(t);
   };
-  for (const el of statusNodes()) add(el.innerText || el.textContent || '');
+  for (const el of statusNodes()) add(el.textContent || '');
   const last = latestAssistant();
   if (last) {
     let nodes = [];
     try { nodes = qa('[role="status"],[aria-live],[data-testid*="tool" i],[data-testid*="status" i],details', last); } catch (_) {}
-    for (const el of nodes) if (visible(el)) add(el.innerText || el.textContent || '');
+    for (const el of nodes) if (visible(el)) add(el.textContent || '');
   }
   return out.slice(-6);
 }
@@ -234,22 +239,28 @@ function progressVisible() {
 function detectBusyState() {
   const stops = semanticStopButtons();
   const square = squareStopCandidate();
-  const pending = pendingTexts();
-  const ariaBusy = ariaBusyVisible();
-  const progress = progressVisible();
   const reasons = [];
   if (stops.length) reasons.push(`stop:${stops.length}`);
   if (square) reasons.push('composer-stop');
+  if (stops.length || square) {
+    return {
+      busy:true,strong:true,reasons,pending:[],stopCount:stops.length,
+      squareStop:!!square,ariaBusy:false,progress:false
+    };
+  }
+  const pending = pendingTexts();
+  const ariaBusy = ariaBusyVisible();
+  const progress = progressVisible();
   if (pending.length) reasons.push(`pending:${pending[0].slice(0, 60)}`);
   if (ariaBusy) reasons.push('aria-busy');
   if (progress) reasons.push('progress');
   return {
-    busy: stops.length > 0 || !!square || pending.length > 0 || ariaBusy || progress,
-    strong: stops.length > 0 || !!square,
+    busy: pending.length > 0 || ariaBusy || progress,
+    strong:false,
     reasons,
     pending,
-    stopCount: stops.length,
-    squareStop: !!square,
+    stopCount:0,
+    squareStop:false,
     ariaBusy,
     progress
   };
@@ -262,7 +273,7 @@ function toolSignature() {
     let nodes = [];
     try { nodes = qa('[data-testid*="tool" i],[role="status"],[aria-live],details', last); } catch (_) {}
     for (const el of nodes.slice(-20)) {
-      const t = norm(el.innerText || el.textContent || '');
+      const t = norm(el.textContent || '');
       if (t && t.length <= 500) parts.push(t);
     }
   }
@@ -270,17 +281,27 @@ function toolSignature() {
   return hash(parts.join('|'));
 }
 
-function captureSnapshot() {
-  const last = latestAssistant();
-  const text = norm(last?.innerText || last?.textContent || '');
+function captureSnapshot(forceDeep=false) {
   const busy = detectBusyState();
+  const deep = forceDeep || !S.lastSnapshot || !busy.busy || now()-S.lastDeepAt >= CFG.deepScanMs;
+  let userCount=S.lastSnapshot?.users||0, assistantCount=S.lastSnapshot?.assistants||0;
+  let assistantHash=S.lastSnapshot?.assistantHash||hash(''), toolHash=S.lastSnapshot?.toolHash||hash('');
+  if (deep) {
+    const last = latestAssistant();
+    const text = norm(last?.textContent || '');
+    userCount = users().length;
+    assistantCount = assistants().length;
+    assistantHash = hash(text);
+    toolHash = toolSignature();
+    S.lastDeepAt = now();
+  }
   return {
-    users: users().length,
-    assistants: assistants().length,
-    assistantHash: hash(text),
-    toolHash: toolSignature(),
+    users:userCount,
+    assistants:assistantCount,
+    assistantHash,
+    toolHash,
     busy,
-    busySignature: hash(busy.reasons.join('|'))
+    busySignature:hash(busy.reasons.join('|'))
   };
 }
 
@@ -526,9 +547,12 @@ function controls() {
   return { c, m, w };
 }
 
-function layout() {
+function layout(force=false) {
   const p = panel(), { c, m, w } = controls();
   if (!p) { c.style.display='none'; m.style.display='none'; w.style.display='none'; return; }
+  const widthChanged = S.lastViewportWidth !== innerWidth;
+  if (!force && S.lastPanelRect && !widthChanged && now()-S.lastLayoutAt < CFG.layoutMs) return;
+  S.lastLayoutAt = now(); S.lastViewportWidth = innerWidth;
   const r = p.getBoundingClientRect();
   if (!S.collapsed && r.width > 0) S.lastPanelRect = { top:r.top, right:innerWidth-r.right, width:r.width, bottom:r.bottom };
   const pr = S.lastPanelRect || { top:70, right:8, width:270, bottom:300 };
@@ -543,7 +567,7 @@ function layout() {
 }
 function collapse(value) {
   if (!value) panel()?.style.removeProperty('display');
-  S.collapsed = !!value; GM_setValue(K.collapsed, S.collapsed); layout();
+  S.collapsed = !!value; GM_setValue(K.collapsed, S.collapsed); layout(true);
 }
 
 function render(snap = captureSnapshot()) {

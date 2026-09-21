@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.1`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.2`.
 
 ## Added behavior
 
@@ -220,3 +220,14 @@ Read it from Chrome DevTools with:
 The snapshot contains only runtime version, generation, destroy reason/timestamp and aggregate resource counts. It never contains Bot Token, Telegram destination, prompts, conversation content or other secrets.
 
 A clean unload has `allZero: true` and every value under `totals` equal to `0`. Ghost also logs `[Ghost+] runtime destroyed` with the same safe snapshot to DevTools Console.
+
+
+## v0.15.2 BUSY scroll-jank hardening
+
+- Smart Watchdog polling is reduced from 1s to 2s; recovery thresholds are unchanged.
+- A visible native/composer Stop control now short-circuits BUSY detection before expensive status/tool scans.
+- Deep assistant/tool progress hashing runs at most every 5 seconds while BUSY.
+- BUSY text hashing uses `textContent` instead of `innerText` to avoid forced layout.
+- Watchdog panel geometry is recomputed at most every 5 seconds unless the viewport width changes or the operator explicitly collapses/restores the panel.
+- Turn Budget clears a stale persisted timer whenever Ghost is no longer RUNNING and there is no staged Ghost-managed prompt.
+- No viewport-control capability is added: Ghost still does not own wheel/touch/scroll APIs.

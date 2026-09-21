@@ -1,5 +1,6 @@
 (() => {
 'use strict';
+const RT=window.__ghostPlusRuntime?.module('help');if(!RT)return;
 if (window.__GHOST_PLUS_HELP__) return;
 window.__GHOST_PLUS_HELP__ = true;
 
@@ -29,7 +30,7 @@ function injectStyle(){
 #gitl9 [data-pane="aoa"] .grid label:has(input[type="checkbox"]:checked):hover{background:rgba(209,250,229,.98)!important}
 #ghost-plus-aoa-hint{font-size:10px;color:#64748b;margin:5px 0 2px;line-height:1.3}
 `;
-  (document.head || document.documentElement).appendChild(st);
+  (document.head || document.documentElement).appendChild(st);RT.node(st);
 }
 
 function decorate(){
@@ -59,7 +60,7 @@ function decorate(){
     hint.textContent = 'ⓘ Di chuột vào từng mục để xem công dụng. Ô xanh + ✓ = đang bật.';
     const grid = $('.grid', pane);
     if (grid) grid.insertAdjacentElement('afterend', hint);
-    else pane.prepend(hint);
+    else pane.prepend(hint);RT.node(hint);
   }
 
   const custom = $('[data-custom]', panel);
@@ -68,5 +69,5 @@ function decorate(){
 
 injectStyle();
 decorate();
-setInterval(decorate, 1200);
+RT.interval(decorate,1200);
 })();

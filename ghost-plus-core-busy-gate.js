@@ -1,5 +1,6 @@
 (() => {
 'use strict';
+const RT=window.__ghostPlusRuntime?.module('core-busy-gate');if(!RT)return;
 if (window.__GHOST_PLUS_CORE_BUSY_GATE__) return;
 window.__GHOST_PLUS_CORE_BUSY_GATE__ = true;
 if (!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname)) return;
@@ -86,7 +87,7 @@ function ensureSentinel() {
   el.setAttribute('aria-hidden', 'true');
   el.tabIndex = -1;
   el.style.cssText = 'position:fixed!important;left:-10000px!important;top:0!important;width:1px!important;height:1px!important;min-width:1px!important;min-height:1px!important;opacity:0!important;pointer-events:none!important;padding:0!important;border:0!important;z-index:-1!important;';
-  (document.body || document.documentElement).appendChild(el);
+  (document.body || document.documentElement).appendChild(el);RT.node(el);
   return el;
 }
 function removeSentinel() {
@@ -99,6 +100,6 @@ function tick() {
   else removeSentinel();
 }
 
-setInterval(tick, 500);
+RT.interval(tick,500);RT.cleanup(removeSentinel);
 tick();
 })();

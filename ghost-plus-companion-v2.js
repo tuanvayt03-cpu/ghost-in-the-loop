@@ -1,5 +1,6 @@
 (() => {
 'use strict';
+const RT=window.__ghostPlusRuntime?.module('watchdog');if(!RT)return;
 if (window.__GHOST_PLUS_SMART__) return;
 window.__GHOST_PLUS_SMART__ = true;
 if (!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname)) return;
@@ -24,7 +25,7 @@ const K = Object.freeze({
 
 const q = (s, r = document) => r.querySelector(s);
 const qa = (s, r = document) => [...r.querySelectorAll(s)];
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+const sleep = ms => RT.sleep(ms);
 const now = () => Date.now();
 function captureExternalSelection(el) {
   try {
@@ -364,7 +365,7 @@ async function setComposerText(text) {
     }
   } catch (_) { return false; }
   finally { restoreExternalSelection(preservedSelection); }
-  await sleep(150);
+  await sleep(150);if(!RT.alive())return false;
   return norm(composerText()) === expected;
 }
 
@@ -372,7 +373,7 @@ async function wait(pred, ms) {
   const started = now();
   while (now() - started < ms) {
     try { if (pred()) return true; } catch (_) {}
-    await sleep(250);
+    await sleep(250);if(!RT.alive())return false;
   }
   return false;
 }
@@ -388,7 +389,7 @@ function contextBoundaryActive() {
 }
 
 async function recover(snap) {
-  if (S.recovering || !ghostRunning() || ghostUncertain() || operatorLocked()) return;
+  if (!RT.alive() || S.recovering || !ghostRunning() || ghostUncertain() || operatorLocked()) return;
   const fresh = captureSnapshot();
   if (fresh.busy.busy) {
     S.suspectAt = 0;
@@ -424,7 +425,7 @@ async function recover(snap) {
     notice('Ghost+ watchdog', 'Không chuyển Ghost về trạng thái an toàn: ' + String(e?.message || e));
     return;
   }
-  await sleep(120);
+  await sleep(120);if(!RT.alive()){S.recovering=false;return}
 
   if (detectBusyState().busy) {
     S.recovering = false;
@@ -432,7 +433,7 @@ async function recover(snap) {
     return;
   }
 
-  if (!await setComposerText(recoveryPrompt())) {
+  if (!await setComposerText(recoveryPrompt()) || !RT.alive()) {
     S.recovering = false;
     notice('Ghost+ watchdog', 'Không stage được recovery status probe. Không gửi.');
     return;
@@ -440,6 +441,7 @@ async function recover(snap) {
 
   const beforeUsers = users().length;
   const beforeAssistantHash = fresh.assistantHash;
+  if(!RT.alive()){S.recovering=false;return}
   try { gp.click(); } catch (e) {
     S.recovering = false;
     notice('Ghost+ watchdog', 'Không khởi động lại Ghost: ' + String(e?.message || e));
@@ -447,6 +449,7 @@ async function recover(snap) {
   }
 
   const restarted = await wait(() => ghostRunning() || detectBusyState().busy || users().length > beforeUsers, CFG.ghostRestartVerifyMs);
+  if(!RT.alive()){S.recovering=false;return}
   if (!restarted) {
     S.recovering = false;
     notice('Ghost+ watchdog', 'Đã stage probe nhưng không xác nhận được Ghost bắt đầu lại. Không resend.');
@@ -481,19 +484,19 @@ function addStyle() {
 #ghostplus-correction{margin-top:5px;display:grid;grid-template-columns:1fr auto;gap:4px}#ghostplus-correction input{min-width:0;width:100%}#ghostplus-correction button{padding:3px 6px;font:10px system-ui;border:1px solid rgba(148,163,184,.42);border-radius:5px;background:#fff;color:#475569;cursor:pointer}
 #ghostplus-busy-detail{margin-top:4px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 `;
-  document.documentElement.appendChild(st);
+  document.documentElement.appendChild(st);RT.node(st);
 }
 
 function controls() {
   let c = q('#ghostplus-collapse');
   if (!c) {
     c = document.createElement('button'); c.id = 'ghostplus-collapse'; c.textContent = '−'; c.title = 'Thu nhỏ Ghost';
-    c.onclick = () => collapse(true); document.documentElement.appendChild(c);
+    c.onclick = () => collapse(true); document.documentElement.appendChild(c);RT.node(c);
   }
   let m = q('#ghostplus-mini');
   if (!m) {
     m = document.createElement('button'); m.id = 'ghostplus-mini'; m.textContent = '👻'; m.title = 'Mở Ghost';
-    m.onclick = () => collapse(false); document.documentElement.appendChild(m);
+    m.onclick = () => collapse(false); document.documentElement.appendChild(m);RT.node(m);
   }
   let w = q('#ghostplus-watch');
   if (!w) {
@@ -507,7 +510,7 @@ function controls() {
       <div class="r" style="margin-top:4px"><label><input data-auto type="checkbox"> tự khôi phục khi IDLE</label><span style="color:#64748b">BUSY = không can thiệp</span></div>
       <div id="ghostplus-busy-detail"></div>
       <div id="ghostplus-correction"><input data-correction type="text" placeholder="Yêu cầu ưu tiên ở lần recovery kế tiếp"><button data-save-correction>Lưu</button></div>`;
-    document.documentElement.appendChild(w);
+    document.documentElement.appendChild(w);RT.node(w);
     const timeout = q('[data-time]', w), budget = q('[data-budget]', w), auto = q('[data-auto]', w);
     timeout.value = String(S.timeout); budget.value = String(S.recoveryBudget); auto.checked = S.auto;
     q('[data-correction]', w).value = S.pendingCorrection;
@@ -631,5 +634,5 @@ function resetRecoveryEpisode() {
   S.idleSince = now();
 }
 window.__ghostPlusWatchdog = { resetRecoveryEpisode, state: () => ({ recoveryCount:S.recoveryCount, recoveryBudget:S.recoveryBudget, recovering:S.recovering }) };
-clearInterval(S.timer); S.timer = setInterval(sample, CFG.tickMs); sample();
+RT.clearInterval(S.timer); S.timer = RT.interval(sample, CFG.tickMs);RT.cleanup(()=>{S.recovering=false;S.timer=null}); sample();
 })();

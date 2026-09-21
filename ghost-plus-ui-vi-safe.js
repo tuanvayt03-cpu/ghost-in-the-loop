@@ -1,5 +1,6 @@
 (() => {
 'use strict';
+const RT=window.__ghostPlusRuntime?.module('ui-vi');if(!RT)return;
 if (window.__GHOST_PLUS_VI_SAFE__) return;
 window.__GHOST_PLUS_VI_SAFE__ = true;
 
@@ -47,5 +48,5 @@ style.textContent = `
 /* Watchdog controls are already rendered directly in Vietnamese by ghost-plus-companion.js.
    Do not rewrite them here; this file remains visual-only and side-effect free. */
 `;
-(document.head || document.documentElement).appendChild(style);
+(document.head || document.documentElement).appendChild(style);RT.node(style);
 })();

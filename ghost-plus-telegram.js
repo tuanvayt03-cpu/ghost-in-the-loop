@@ -1,5 +1,6 @@
 (() => {
 'use strict';
+const RT=window.__ghostPlusRuntime?.module('telegram');if(!RT)return;
 if(window.__GHOST_PLUS_TELEGRAM__)return;window.__GHOST_PLUS_TELEGRAM__=true;
 if(!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname))return;
 
@@ -11,7 +12,7 @@ const K={
 };
 const q=(s,r=document)=>r.querySelector(s);
 const n=v=>String(v||'').replace(/\s+/g,' ').trim();
-const now=()=>Date.now(),sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const now=()=>Date.now(),sleep=ms=>RT.sleep(ms);
 const get=(k,d='')=>{try{return GM_getValue(k,d)}catch(_){return d}};
 const set=(k,v)=>{try{GM_setValue(k,v)}catch(_){}};
 let code='',deadline=0,offset=0,timer=null,lastError='',queue=Promise.resolve();
@@ -97,20 +98,35 @@ function req(method,data={}){
   const t=token();
   if(!t)return Promise.reject(new Error('Chưa có Bot Token'));
   if(typeof GM_xmlhttpRequest!=='function')return Promise.reject(new Error('Thiếu GM_xmlhttpRequest'));
-  return new Promise((ok,no)=>GM_xmlhttpRequest({
-    method:'POST',url:'https://api.telegram.org/bot'+t+'/'+method,
-    headers:{'Content-Type':'application/json'},data:JSON.stringify(data),timeout:10000,
-    onload:r=>{let b={};try{b=JSON.parse(r.responseText||'{}')}catch(_){}
-      r.status>=200&&r.status<300&&b.ok?ok(b.result):no(new Error(b.description||('Telegram HTTP '+r.status)))},
-    onerror:()=>no(new Error('Telegram network error')),ontimeout:()=>no(new Error('Telegram timeout'))
-  }))
+  return new Promise((ok,no)=>{
+    let h=null,settled=false;
+    const finish=(fn,v)=>{
+      if(settled)return;settled=true;RT.releaseAbortable(h);
+      if(!RT.alive()){no(new Error('Ghost runtime destroyed'));return}
+      fn(v);
+    };
+    try{
+      h=GM_xmlhttpRequest({
+        method:'POST',url:'https://api.telegram.org/bot'+t+'/'+method,
+        headers:{'Content-Type':'application/json'},data:JSON.stringify(data),timeout:10000,
+        onload:r=>{let b={};try{b=JSON.parse(r.responseText||'{}')}catch(_){}
+          r.status>=200&&r.status<300&&b.ok?finish(ok,b.result):finish(no,new Error(b.description||('Telegram HTTP '+r.status)))},
+        onerror:()=>finish(no,new Error('Telegram network error')),
+        ontimeout:()=>finish(no,new Error('Telegram timeout')),
+        onabort:()=>finish(no,new Error('Ghost runtime destroyed'))
+      });
+      RT.abortable(h);
+    }catch(e){finish(no,e)}
+  })
 }
 async function retry(method,data,ntry=2){
   let e;
   for(let i=0;i<ntry;i++){
+    if(!RT.alive())throw new Error('Ghost runtime destroyed');
     try{return await req(method,data)}catch(x){
-      e=x;if(/Telegram 4\d\d/.test(String(x?.message||x)))break;
-      if(i+1<ntry)await sleep(i?3000:1000)
+      e=x;if(!RT.alive())throw e;
+      if(/Telegram 4\d\d/.test(String(x?.message||x)))break;
+      if(i+1<ntry){await sleep(i?3000:1000);if(!RT.alive())throw new Error('Ghost runtime destroyed')}
     }
   }
   throw e
@@ -192,13 +208,13 @@ async function bind(){
   if(wh?.url)throw new Error('Bot đang có webhook; Ghost không tự xóa. Dùng bot riêng hoặc nhập Chat ID.');
   const u=await req('getUpdates',{timeout:0,limit:100,allowed_updates:['message','channel_post']});
   offset=(u||[]).reduce((m,x)=>Math.max(m,Number(x.update_id)||0),0)+1;
-  code=secureCode();deadline=now()+60000;clearInterval(timer);timer=setInterval(poll,2000);render()
+  code=secureCode();deadline=now()+60000;RT.clearInterval(timer);timer=RT.interval(poll,2000);render()
 }
 function topicNameFrom(m){
   return n(m?.forum_topic_created?.name||m?.reply_to_message?.forum_topic_created?.name||'')
 }
 async function poll(){
-  if(!code||now()>deadline){clearInterval(timer);timer=null;code='';render();return}
+  if(!code||now()>deadline){RT.clearInterval(timer);timer=null;code='';render();return}
   try{
     const u=await req('getUpdates',{offset,timeout:0,limit:20,allowed_updates:['message','channel_post']});
     for(const x of u||[]){
@@ -208,7 +224,7 @@ async function poll(){
       const th=Number(m.message_thread_id)||0;
       set(K.c,String(c.id));set(K.n,n(c.title||c.username||c.first_name||c.id));
       set(K.h,th>0?String(th):'');set(K.p,th>0?(topicNameFrom(m)||('topic #'+th)):'');
-      set(K.e,true);clearInterval(timer);timer=null;code='';lastError='';render();await test();return
+      set(K.e,true);RT.clearInterval(timer);timer=null;code='';lastError='';render();await test();return
     }
   }catch(e){lastError=n(e?.message||e).slice(0,220);render()}
 }
@@ -231,7 +247,7 @@ function saveUi(){
 }
 function forget(){
   [K.t,K.c,K.n,K.b,K.h,K.p].forEach(k=>set(k,''));
-  set(K.e,false);clearInterval(timer);timer=null;code='';lastError='';render()
+  set(K.e,false);RT.clearInterval(timer);timer=null;code='';lastError='';render()
 }
 function buttonStyle(){
   return 'width:100%;padding:5px 6px;border:1px solid rgba(100,116,139,.35);border-radius:6px;background:#fff;cursor:pointer;font:10px system-ui'
@@ -272,8 +288,8 @@ function ui(){
   for(const b of r.querySelectorAll('[data-actions] button'))b.style.cssText=buttonStyle();
 
   const tokenEl=q('[data-token]',r);
-  tokenEl.addEventListener('focus',()=>{if(tokenEl.value===maskToken())tokenEl.select()});
-  tokenEl.addEventListener('blur',()=>setTimeout(render,0));
+  RT.listen(tokenEl,'focus',()=>{if(tokenEl.value===maskToken())tokenEl.select()});
+  RT.listen(tokenEl,'blur',()=>RT.timeout(render,0));
 
   q('[data-save]',r).onclick=()=>{try{saveUi()}catch(e){lastError=n(e?.message||e);render()}};
   q('[data-check]',r).onclick=async()=>{try{applyTokenInput(tokenEl);await getMe();lastError='Bot hợp lệ.';render()}catch(e){lastError=n(e?.message||e);render()}};
@@ -352,10 +368,12 @@ function reminders(){
   }
 }
 
-window.__ghostPlusAlerts?.subscribe?.(e=>send(e));
-setTimeout(()=>{syncCurrentGate(true);drainOutbox()},1000);
-setInterval(syncCurrentGate,10000);
-setInterval(drainOutbox,5000);
-setInterval(reminders,60000);setInterval(render,1500);ui();render();
+const unsubscribe=window.__ghostPlusAlerts?.subscribe?.(e=>send(e));
+if(typeof unsubscribe==='function')RT.cleanup(unsubscribe);
+RT.timeout(()=>{syncCurrentGate(true);drainOutbox()},1000);
+RT.interval(syncCurrentGate,10000);
+RT.interval(drainOutbox,5000);
+RT.interval(reminders,60000);RT.interval(render,1500);ui();render();
+RT.cleanup(()=>{if(timer!=null)RT.clearInterval(timer);timer=null;code='';reminderPending.clear();sendPending.clear();gateSyncAttempt.clear()});
 window.__ghostPlusTelegram={getMe,test,bind,send,forget,threadId:thread,maskedToken:maskToken,syncCurrentGate,drainOutbox};
 })();

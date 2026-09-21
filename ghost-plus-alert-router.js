@@ -1,5 +1,6 @@
 (() => {
 'use strict';
+const RT=window.__ghostPlusRuntime?.module('alert-router');if(!RT)return;
 if(window.__GHOST_PLUS_ALERT_ROUTER__)return;window.__GHOST_PLUS_ALERT_ROUTER__=true;
 const raw=typeof GM_notification==='function'?GM_notification:null,subs=new Set(),seen=new Map(),groupSeen=new Map();
 const n=v=>String(v||'').replace(/\s+/g,' ').trim(),now=()=>Date.now(),path=()=>String(location.pathname||'/').split(/[?#]/)[0];
@@ -9,7 +10,14 @@ function dispatch(e={}){const x=Object.freeze({id:e.id||path()+':'+(e.type||'GEN
 function desktop(e){if(!raw)return;const key=[e.path,e.type,e.episodeId,e.text||e.reason].join('|'),ttl=e.severity==='critical'?8000:30000,gttl=e.severity==='critical'?1800:900;if(now()-(seen.get(key)||0)<ttl)return;if(now()-(groupSeen.get(e.group)||0)<gttl)return;seen.set(key,now());groupSeen.set(e.group,now());try{raw({title:e.title+' · '+e.chat,text:e.text||e.reason||e.type,timeout:e.severity==='critical'?12000:8000})}catch(_){}}
 function emit(e={}){const x=dispatch(e);if(e.desktop!==false&&!e.silent)desktop(x);return x}
 function subscribe(f){if(typeof f!=='function')return()=>{};subs.add(f);return()=>subs.delete(f)}
-function legacy(d,done){const o=typeof d==='string'?{title:'Ghost+',text:d}:{...(d||{})},c=classify(n(o.title),n(o.text||o.message)),x=dispatch({type:c[0],severity:c[1],group:c[2],title:n(o.title||'Ghost+'),text:n(o.text||o.message),source:'legacy'});desktop(x);try{if(typeof done==='function')setTimeout(done,0)}catch(_){}}
+function legacy(d,done){const o=typeof d==='string'?{title:'Ghost+',text:d}:{...(d||{})},c=classify(n(o.title),n(o.text||o.message)),x=dispatch({type:c[0],severity:c[1],group:c[2],title:n(o.title||'Ghost+'),text:n(o.text||o.message),source:'legacy'});desktop(x);try{if(typeof done==='function')RT.timeout(done,0)}catch(_){}}
 window.__ghostPlusAlerts={emit,subscribe,currentChatName:chat};window.__ghostPlusCurrentChatName=chat;window.__ghostPlusNotify=legacy;
-try{GM_notification=legacy}catch(_){try{globalThis.GM_notification=legacy}catch(_){}}
+let installed=false;
+try{GM_notification=legacy;installed=true}catch(_){try{globalThis.GM_notification=legacy;installed=true}catch(_){}}
+RT.cleanup(()=>{
+  subs.clear();seen.clear();groupSeen.clear();
+  if(installed){
+    try{if(GM_notification===legacy)GM_notification=raw}catch(_){try{if(globalThis.GM_notification===legacy)globalThis.GM_notification=raw}catch(_){}}
+  }
+});
 })();

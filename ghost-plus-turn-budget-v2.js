@@ -1,5 +1,6 @@
 (() => {
 'use strict';
+const RT=window.__ghostPlusRuntime?.module('turn-budget');if(!RT)return;
 if (window.__GHOST_PLUS_TURN_BUDGET_V2__) return;
 window.__GHOST_PLUS_TURN_BUDGET_V2__ = true;
 if (!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname)) return;
@@ -160,7 +161,7 @@ try{
       return originalClick.apply(this,args);
     };
     try{Object.defineProperty(wrapped,'__ghostPlusBudgetV2Wrapped',{value:true});}catch(_){}
-    HTMLButtonElement.prototype.click=wrapped;
+    RT.patch(HTMLButtonElement.prototype,'click',wrapped);
   }
 }catch(_){}
 
@@ -212,6 +213,6 @@ function renderUi(){
   else if(elapsed>=limit*.8){state.textContent='wrap up';dot.style.background='#f59e0b';}
   else{state.textContent='ổn';dot.style.background='#10b981';}
 }
-setInterval(renderUi,CFG.tickMs);
+RT.interval(renderUi,CFG.tickMs);
 renderUi();
 })();

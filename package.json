@@ -20,10 +20,11 @@
     "package:oracle": "npm run package:candidate && npm run package:check",
     "test:package": "jest tests/package-candidate.test.js --runInBand",
     "test": "npm run check:generated && jest",
-    "test:unit": "jest",
+    "test:unit": "jest && npm run test:ghostplus-runtime",
     "test:e2e": "playwright test",
     "test:all": "jest && playwright test",
-    "lint": "node --check ghost-in-the-loop.user.js && node --check extension/content.js && node --check scripts/certify-extension.js && node --check scripts/build-identity.js && node --check scripts/package-candidate.js"
+    "lint": "node --check ghost-in-the-loop.user.js && node --check extension/content.js && node --check scripts/certify-extension.js && node --check scripts/build-identity.js && node --check scripts/package-candidate.js",
+    "test:ghostplus-runtime": "node tests/runtime-lifecycle-vm.mjs && node tests/runtime-lifecycle-static.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

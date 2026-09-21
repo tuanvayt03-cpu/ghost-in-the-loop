@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.0`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.1`.
 
 ## Added behavior
 
@@ -203,3 +203,20 @@ While Ghost is loaded:
 ### Viewport invariant
 
 Ghost monitoring does not own ChatGPT viewport state. Runtime modules must not introduce wheel/mousewheel/touchmove/selectstart interception, `scrollIntoView`, `scrollTo`, `scrollBy`, or body/html overflow locking. Programmatic composer focus must use `focus({preventScroll:true})`.
+
+
+## v0.15.1 page-visible diagnostics
+
+Tampermonkey may isolate userscript globals from the page's DevTools `window`. Therefore page-console access to `window.__ghostPlusRuntime` is not a reliable post-unload check.
+
+After `Gỡ khỏi tab`, Ghost now publishes a secret-free cleanup snapshot to:
+
+`document.documentElement.dataset.ghostplusLastDiagnostics`
+
+Read it from Chrome DevTools with:
+
+`JSON.parse(document.documentElement.dataset.ghostplusLastDiagnostics)`
+
+The snapshot contains only runtime version, generation, destroy reason/timestamp and aggregate resource counts. It never contains Bot Token, Telegram destination, prompts, conversation content or other secrets.
+
+A clean unload has `allZero: true` and every value under `totals` equal to `0`. Ghost also logs `[Ghost+] runtime destroyed` with the same safe snapshot to DevTools Console.

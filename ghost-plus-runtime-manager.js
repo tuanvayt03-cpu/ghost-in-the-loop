@@ -2,7 +2,7 @@
 'use strict';
 
 const ROOT='__ghostPlusRuntime';
-const VERSION='0.15.0';
+const VERSION='0.15.1';
 const previous=window[ROOT];
 try { if(previous?.active && typeof previous.destroy==='function') previous.destroy('reinject'); } catch (_) {}
 
@@ -20,6 +20,28 @@ window.__ghostPlusRuntimeSeq=seq;
 const scopes=new Map();
 let active=true, destroyedAt=0, destroyReason='';
 const startedAt=Date.now();
+try{document.documentElement.dataset.ghostplusRuntimeGeneration=String(seq)}catch(_){}
+
+function publicSnapshot(d){
+  const totals={};
+  for(const [k,v] of Object.entries(d?.totals||{}))totals[k]=Number(v)||0;
+  return {
+    version:String(d?.version||VERSION),
+    generation:Number(d?.generation)||seq,
+    active:!!d?.active,
+    destroyedAt:Number(d?.destroyedAt)||0,
+    destroyReason:String(d?.destroyReason||''),
+    totals,
+    allZero:Object.values(totals).every(v=>v===0)
+  }
+}
+function publishLast(d){
+  const safe=publicSnapshot(d);
+  try{document.documentElement.dataset.ghostplusLastDiagnostics=JSON.stringify(safe)}catch(_){}
+  try{delete document.documentElement.dataset.ghostplusRuntimeGeneration}catch(_){}
+  try{console.info('[Ghost+] runtime destroyed',safe)}catch(_){}
+  return safe
+}
 
 function makeScope(name){
   if(scopes.has(name)) return scopes.get(name).api;
@@ -161,6 +183,7 @@ function destroy(reason='operator'){
   cleanupDom();cleanupGlobals();
   const final=diagnostics();
   try{window.__ghostPlusRuntimeLastDiagnostics=final}catch(_){}
+  publishLast(final);
   return final;
 }
 

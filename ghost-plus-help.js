@@ -60,7 +60,7 @@ function decorate(){
     hint.textContent = 'ⓘ Di chuột vào từng mục để xem công dụng. Ô xanh + ✓ = đang bật.';
     const grid = $('.grid', pane);
     if (grid) grid.insertAdjacentElement('afterend', hint);
-    else pane.prepend(hint);RT.node(hint);
+    else pane.prepend(hint);
   }
 
   const custom = $('[data-custom]', panel);

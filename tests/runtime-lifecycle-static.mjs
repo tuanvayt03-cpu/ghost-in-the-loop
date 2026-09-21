@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 
-const root=path.resolve(path.dirname(new URL(import.meta.url).pathname),'..');
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const modules=[
   'ghost-plus-alert-router.js','ghost-plus-telegram.js','ghost-plus-turn-budget-v2.js',
   'ghost-in-the-loop.user.js','ghost-plus-operator-gate.js','ghost-plus-uncertain-reconcile.js',

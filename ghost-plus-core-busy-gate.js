@@ -87,7 +87,7 @@ function ensureSentinel() {
   el.setAttribute('aria-hidden', 'true');
   el.tabIndex = -1;
   el.style.cssText = 'position:fixed!important;left:-10000px!important;top:0!important;width:1px!important;height:1px!important;min-width:1px!important;min-height:1px!important;opacity:0!important;pointer-events:none!important;padding:0!important;border:0!important;z-index:-1!important;';
-  (document.body || document.documentElement).appendChild(el);RT.node(el);
+  (document.body || document.documentElement).appendChild(el);
   return el;
 }
 function removeSentinel() {

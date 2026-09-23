@@ -83,7 +83,7 @@ function operatorLocked() { return !!window.__ghostPlusSupervisor?.isLocked?.();
 function signal(type, severity, title, text, extra = {}) {
   try { window.__ghostPlusAlerts?.emit?.({ type, severity, title, text, ...extra }); } catch (_) {}
 }
-function requireHuman(snap, message) {
+function requireHuman(snap, message, gateMeta={}) {
   const msg=norm(message||'Web recovery cannot continue safely; manual review is required.');
   S.recovering=false;
   S.attemptedThisEpisode=true;
@@ -94,7 +94,15 @@ function requireHuman(snap, message) {
   renderWebState(snap,msg);
   try {
     if(window.__ghostPlusSupervisor?.lock){
-      window.__ghostPlusSupervisor.lock('HUMAN_REQUIRED',{reason:msg});
+      window.__ghostPlusSupervisor.lock('HUMAN_REQUIRED',{
+        reason:msg,
+        source:norm(gateMeta.source||''),
+        transient:norm(gateMeta.transient||''),
+        autoReconcile:!!gateMeta.autoReconcile,
+        baselineUsers:Number.isFinite(gateMeta.baselineUsers)?gateMeta.baselineUsers:null,
+        baselineAssistants:Number.isFinite(gateMeta.baselineAssistants)?gateMeta.baselineAssistants:null,
+        faultKey:norm(gateMeta.faultKey||snap?.key||'')
+      });
       return;
     }
   } catch (_) {}
@@ -425,14 +433,22 @@ async function sendRecoveryProbe(snap) {
           explicitFailureExhausted(snap,verdict);
           return;
         }
-        requireHuman(snap,'Recovery retry không được xác nhận và evidence không còn chứng minh send FAILED. Outcome thật sự uncertain; cần kiểm tra thủ công.');
+        requireHuman(
+          snap,
+          'Recovery retry không được xác nhận và evidence không còn chứng minh send FAILED. Outcome thật sự uncertain; cần kiểm tra thủ công.',
+          {source:'web-recovery',transient:'WEB_SEND_UNCERTAIN',autoReconcile:true,baselineUsers:beforeUsers,baselineAssistants:beforeAssistants,faultKey:snap.key}
+        );
         return;
       }
     }else if(verdict.verified){
       explicitFailureExhausted(snap,verdict);
       return;
     }else{
-      requireHuman(snap,'Status probe không được xác nhận và không đủ bằng chứng chứng minh send FAILED. Outcome thật sự uncertain; cần kiểm tra thủ công.');
+      requireHuman(
+        snap,
+        'Status probe không được xác nhận và không đủ bằng chứng chứng minh send FAILED. Outcome thật sự uncertain; cần kiểm tra thủ công.',
+        {source:'web-recovery',transient:'WEB_SEND_UNCERTAIN',autoReconcile:true,baselineUsers:beforeUsers,baselineAssistants:beforeAssistants,faultKey:snap.key}
+      );
       return;
     }
   }

@@ -140,19 +140,22 @@ function clearLease(){try{GM_setValue(K.lease,0)}catch(_){}}
 function leaseRemaining(){const s=leaseStartedAt();return s?Math.max(0,CFG.continuityLeaseMs-(now()-s)):0}
 
 function semanticStopButtons() {
+  // Keep global selectors aligned with Ghost core's ChatGPT profile.
+  // Broad "*=stop" selectors can match unrelated/stale controls (audio, media, extension UI)
+  // and hold Watchdog in BUSY forever.
   const selectors = [
     'button[data-testid="stop-button"]',
-    'button[data-testid*="stop" i]',
-    'button[aria-label*="stop" i]',
-    'button[aria-label*="dừng" i]',
-    'button[title*="stop" i]',
-    'button[title*="dừng" i]'
+    'button[aria-label="Stop generating"]',
+    'button[aria-label="Stop streaming"]'
   ];
   const seen = new Set(), out = [];
   for (const sel of selectors) {
     let nodes = [];
     try { nodes = qa(sel); } catch (_) {}
-    for (const el of nodes) if (visible(el) && !seen.has(el)) { seen.add(el); out.push(el); }
+    for (const el of nodes) {
+      if (!visible(el) || el.closest?.('#gitl9,#ghostplus-watch,#ghostplus-mini,#ghostplus-collapse') || seen.has(el)) continue;
+      seen.add(el); out.push(el);
+    }
   }
   return out;
 }
@@ -169,6 +172,7 @@ function composerLocalButtons() {
 
 function squareStopCandidate() {
   for (const btn of composerLocalButtons()) {
+    if(btn.closest?.('#gitl9,#ghostplus-watch,#ghostplus-mini,#ghostplus-collapse'))continue;
     const meta = norm([
       btn.getAttribute('data-testid'), btn.getAttribute('aria-label'), btn.getAttribute('title')
     ].filter(Boolean).join(' '));

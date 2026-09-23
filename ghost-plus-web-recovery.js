@@ -272,11 +272,15 @@ function faultSnapshot() {
   const pausedUncertain = ghostPaused() && ghostUncertain();
   const recoverableType = ['SEND_TIMEOUT','CONNECTION_INTERRUPTED','NETWORK_ERROR','GENERATION_ERROR'].includes(error.type);
   const blockedType = ['RATE_LIMIT','AUTH_ERROR'].includes(error.type);
-  const active = pausedUncertain || (ghostPaused() && (recoverableType || blockedType));
+  const explicitWebError = !!error.type;
+  // Web errors are page state, not Ghost-core state. A visible explicit error must be surfaced
+  // even while the core still says RUNNING. sendRecoveryProbe() separately refuses to act
+  // while ChatGPT is genuinely generating, so stale banners cannot cause a duplicate send.
+  const active = pausedUncertain || explicitWebError;
   const userText = latestText(users());
   const assistantText = latestText(assistants());
   const key = active ? [error.type || 'PLAY_SEND_UNCERTAIN', hash(error.text || status), hash(userText), hash(assistantText)].join('|') : '';
-  return { active, pausedUncertain, recoverableType, blockedType, error, status, key, generating: generating() };
+  return { active, explicitWebError, pausedUncertain, recoverableType, blockedType, error, status, key, generating: generating() };
 }
 
 function ensureUi() {
@@ -389,7 +393,7 @@ async function sendRecoveryProbe(snap) {
     return;
   }
   if (snap.generating) {
-    renderWebState(snap, 'ChatGPT vẫn đang generating; web-error recovery không can thiệp. Watchdog stall xử lý riêng.');
+    renderWebState(snap, `${snap.error.type||'WEB_ERROR'} đã detect nhưng ChatGPT vẫn đang generating; chỉ theo dõi, chưa recovery.`);
     return;
   }
   if (composerText()) {

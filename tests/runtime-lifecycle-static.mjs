@@ -23,7 +23,7 @@ assert.match(manager,/h\.abort\(\)/);
 assert.match(manager,/Object\.defineProperty\(p\.obj,p\.key,p\.desc\)/);
 assert.match(manager,/ghostplusLastDiagnostics/);
 assert.match(manager,/allZero:Object\.values\(totals\)\.every/);
-assert.match(loader,/ghostplus\.15\.6/);
+assert.match(loader,/ghostplus\.15\.7/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);
@@ -80,3 +80,14 @@ const playBody=corePlay.slice(corePlay.indexOf('async function play()'),corePlay
 assert.match(playBody,/if \(generating\(\)\) \{/,'active generation adopt branch missing');
 assert.match(playBody,/Adopted active ChatGPT turn · monitoring without sending/,'active generation adopt detail missing');
 assert.ok(playBody.indexOf('if (generating()) {') < playBody.indexOf('} else if (draft.trim())'),'active generation must be adopted without Send before draft bootstrap');
+
+const webRecovery=read('ghost-plus-web-recovery.js');
+assert.match(webRecovery,/verifiedFailureRetryMax:\s*1/,'verified SEND_TIMEOUT retry budget regressed');
+assert.match(webRecovery,/explicitTimeout:error\.type==='SEND_TIMEOUT'/,'verified SEND_TIMEOUT classification regressed');
+assert.match(webRecovery,/retryVisible:error\.retryVisible===true/,'Retry button evidence missing');
+assert.match(webRecovery,/userCountStable:users\(\)\.length===beforeUsers/,'user-count evidence missing');
+assert.match(webRecovery,/assistantCountStable:assistants\(\)\.length===beforeAssistants/,'assistant-count evidence missing');
+assert.match(webRecovery,/managedDraft:managedRecoveryDraft\(draft,snap\)/,'managed recovery draft evidence missing');
+assert.match(webRecovery,/S\.verifiedFailureRetries < CFG\.verifiedFailureRetryMax/,'controlled retry path missing');
+assert.match(webRecovery,/Không nâng HUMAN và không resend thêm/,'verified failed send must not escalate to HUMAN');
+assert.match(webRecovery,/Outcome thật sự uncertain; cần kiểm tra thủ công\./,'uncertain evidence must still escalate to HUMAN');

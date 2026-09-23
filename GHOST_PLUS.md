@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.6`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.7`.
 
 ## Added behavior
 
@@ -273,3 +273,12 @@ The manual diagnostic is `debug/ghost-scroll-diagnostic.user.js`. It is not incl
 - **Copy** copies the latest captured stall snapshot. If no stall has been captured yet, it first records a manual current-state snapshot and copies that.
 - **Log** records the current state without waiting for a stall.
 - Tampermonkey menu commands remain as a fallback, but the page widget is the primary operator path.
+
+
+## v0.15.7 verified SEND_TIMEOUT classification
+
+- `SEND_TIMEOUT` no longer escalates to `HUMAN_REQUIRED` merely because a recovery probe was not confirmed within the send verification window.
+- A failed recovery send is classified as `VERIFIED_FAILED` only when all evidence agrees: explicit SEND_TIMEOUT text, visible Retry/Try again control, ChatGPT is not generating, user/assistant message counts did not advance, and the composer still contains the Ghost-managed WEB RECOVERY STATUS PROBE for the same recovery reason.
+- `VERIFIED_FAILED` gets one controlled Ghost recovery retry. Ghost never clicks ChatGPT's old Retry/Try again button.
+- If the one retry also has the same explicit failure evidence, the fault remains `SEND_TIMEOUT` and emits a warning; it does **not** create a HUMAN gate and does not resend again during that fault episode.
+- HUMAN is reserved for genuinely uncertain/mixed evidence: message counts advanced, generation state changed, the managed recovery draft changed/disappeared, or other evidence no longer proves a failed send.

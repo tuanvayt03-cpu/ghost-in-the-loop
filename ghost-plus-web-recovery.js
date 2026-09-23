@@ -11,6 +11,8 @@ const CFG = Object.freeze({
   sendVerifyMs: 14000,
   verifiedFailureRetryMax: 1,
   verifiedFailureRetryDelayMs: 1500,
+  interruptionSettleMs: 30000,
+  interruptionScanMs: 3000,
   clearStableMs: 5000,
   maxFaultText: 700
 });
@@ -28,6 +30,8 @@ const S = {
   clearSince: 0,
   attemptedThisEpisode: false,
   verifiedFailureRetries: 0,
+  lastInterruptScanAt: 0,
+  lastInterruptText: '',
   lastFaultKey: String(GM_getValue(K.lastFaultKey, '') || ''),
   lastFaultAttemptAt: Number(GM_getValue(K.lastFaultAttemptAt, 0)) || 0
 };
@@ -151,7 +155,9 @@ function errorCandidateTexts() {
 
   const selectors = [
     '[role="alert"]',
+    '[role="status"]',
     '[aria-live="assertive"]',
+    '[aria-live="polite"]',
     '[data-testid*="error" i]',
     '[data-testid*="toast" i]',
     '[class*="error" i]'
@@ -172,9 +178,20 @@ function errorCandidateTexts() {
   }
   return texts;
 }
+function interruptedBannerText(){
+  const t=now();
+  if(t-S.lastInterruptScanAt<CFG.interruptionScanMs)return S.lastInterruptText;
+  S.lastInterruptScanAt=t;S.lastInterruptText='';
+  let raw='';
+  try{raw=String(document.body?.textContent||'')}catch(_){}
+  const m=raw.match(/(?:connection interrupted(?:\.|:)?\s*(?:waiting for (?:a |the )?complete response)?|kết nối bị gián đoạn(?:\.|:)?\s*(?:đang chờ câu trả lời hoàn chỉnh)?)/i);
+  if(m)S.lastInterruptText=norm(m[0]);
+  return S.lastInterruptText;
+}
 function classifyErrorText(text) {
   const t = norm(text).toLowerCase();
   if (!t) return '';
+  if (/connection interrupted|kết nối bị gián đoạn|đang chờ câu trả lời hoàn chỉnh|waiting for (?:a |the )?complete response/.test(t)) return 'CONNECTION_INTERRUPTED';
   if (/timed out waiting to send|timeout.*send|send.*timed out|hết thời gian chờ gửi|chờ gửi tin nhắn.*quá|đã hết thời gian chờ gửi/.test(t)) return 'SEND_TIMEOUT';
   if (/rate limit|too many requests|quá nhiều yêu cầu|429\b/.test(t)) return 'RATE_LIMIT';
   if (/session expired|authentication|unauthorized|sign in again|đăng nhập lại|phiên.*hết hạn|xác thực/.test(t)) return 'AUTH_ERROR';
@@ -188,6 +205,10 @@ function scanWebError() {
     const type = classifyErrorText(text);
     if (type) return { type, text, retryVisible: retryButtons().length > 0 };
   }
+  if(ghostPaused()||ghostUncertain()){
+    const text=interruptedBannerText(),type=classifyErrorText(text);
+    if(type)return {type,text,retryVisible:retryButtons().length>0};
+  }
   return { type: '', text: '', retryVisible: retryButtons().length > 0 };
 }
 function managedRecoveryDraft(value,snap){
@@ -198,15 +219,34 @@ function managedRecoveryDraft(value,snap){
 function verifiedFailedSend(snap,{beforeUsers,beforeAssistants}={}){
   const error=scanWebError();
   const draft=composerText();
+  const explicitFailureType=['SEND_TIMEOUT','CONNECTION_INTERRUPTED'].includes(error.type)&&error.type===snap?.error?.type;
+  const retryEvidence=error.type==='SEND_TIMEOUT'?error.retryVisible===true:true;
   const evidence={
-    explicitTimeout:error.type==='SEND_TIMEOUT',
-    retryVisible:error.retryVisible===true,
+    explicitFailureType,
+    retryEvidence,
     notGenerating:!generating(),
     userCountStable:users().length===beforeUsers,
     assistantCountStable:assistants().length===beforeAssistants,
     managedDraft:managedRecoveryDraft(draft,snap)
   };
   return {verified:Object.values(evidence).every(Boolean),evidence,error,draft};
+}
+function clearManagedRecoveryDraft(snap){
+  const el=composer();
+  if(!el||!managedRecoveryDraft(composerText(),snap))return false;
+  try{
+    if(el.isContentEditable){
+      el.textContent='';
+      el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'deleteContentBackward',data:null}));
+    }else{
+      const proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
+      const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
+      if(setter)setter.call(el,'');else el.value='';
+      el.dispatchEvent(new Event('input',{bubbles:true}));
+      el.dispatchEvent(new Event('change',{bubbles:true}));
+    }
+  }catch(_){return false}
+  return !composerText();
 }
 function markAttempt(snap){
   S.attemptedThisEpisode=true;
@@ -218,9 +258,11 @@ function markAttempt(snap){
 function explicitFailureExhausted(snap,verdict){
   markAttempt(snap);
   S.recovering=false;
-  const msg='SEND_TIMEOUT đã được xác nhận là send FAILED; recovery retry 1/1 cũng failed rõ ràng. Không nâng HUMAN và không resend thêm trong fault episode này.';
+  clearManagedRecoveryDraft(snap);
+  const type=snap?.error?.type||verdict?.error?.type||'RECOVERY_SEND_FAILED';
+  const msg=`${type} đã được xác nhận là recovery send FAILED; retry 1/1 cũng failed rõ ràng. Không nâng HUMAN và không resend thêm trong fault episode này.`;
   renderWebState(snap,msg);
-  signal('SEND_TIMEOUT','warning','Ghost+ web supervisor',msg,{group:'web-recovery',reason:snap.error.text||msg,evidence:verdict?.evidence});
+  signal(type,'warning','Ghost+ web supervisor',msg,{group:'web-recovery',reason:snap?.error?.text||msg,evidence:verdict?.evidence});
   notice('Ghost+ web supervisor',msg);
 }
 
@@ -228,7 +270,7 @@ function faultSnapshot() {
   const error = scanWebError();
   const status = ghostStatus();
   const pausedUncertain = ghostPaused() && ghostUncertain();
-  const recoverableType = ['SEND_TIMEOUT','NETWORK_ERROR','GENERATION_ERROR'].includes(error.type);
+  const recoverableType = ['SEND_TIMEOUT','CONNECTION_INTERRUPTED','NETWORK_ERROR','GENERATION_ERROR'].includes(error.type);
   const blockedType = ['RATE_LIMIT','AUTH_ERROR'].includes(error.type);
   const active = pausedUncertain || (ghostPaused() && (recoverableType || blockedType));
   const userText = latestText(users());
@@ -395,10 +437,10 @@ async function sendRecoveryProbe(snap) {
     let verdict=verifiedFailedSend(snap,{beforeUsers,beforeAssistants});
     if(verdict.verified && S.verifiedFailureRetries < CFG.verifiedFailureRetryMax){
       S.verifiedFailureRetries += 1;
-      renderWebState(snap,`SEND_TIMEOUT xác nhận send FAILED · retry recovery ${S.verifiedFailureRetries}/${CFG.verifiedFailureRetryMax}; không click nút Thử lại cũ.`);
+      renderWebState(snap,`${snap.error.type||'RECOVERY_SEND_FAILED'} xác nhận recovery send FAILED · retry ${S.verifiedFailureRetries}/${CFG.verifiedFailureRetryMax}; không click request cũ.`);
       const retryStop=ghostStop();
       if(!visible(retryStop)){
-        requireHuman(snap,'Send timeout đã fail rõ nhưng không tìm thấy Ghost Stop để chuẩn bị retry recovery an toàn.');
+        requireHuman(snap,'Recovery send đã fail rõ nhưng không tìm thấy Ghost Stop để chuẩn bị retry an toàn.');
         return;
       }
       try{retryStop.click()}catch(e){
@@ -408,7 +450,7 @@ async function sendRecoveryProbe(snap) {
       await sleep(CFG.verifiedFailureRetryDelayMs);if(!RT.alive()){S.recovering=false;return}
       if(operatorLocked()){S.recovering=false;return}
       if(!managedRecoveryDraft(composerText(),snap)){
-        requireHuman(snap,'Recovery draft đã thay đổi sau SEND_TIMEOUT; không retry vì outcome không còn chắc chắn.');
+        requireHuman(snap,'Recovery draft đã thay đổi sau explicit failure; không retry vì outcome không còn chắc chắn.');
         return;
       }
       const retryPlay=ghostPlay();
@@ -493,8 +535,14 @@ function sample() {
     return;
   }
 
-  if (now() - S.faultSeenAt < CFG.settleMs) {
-    renderWebState(snap, 'Đang xác minh lỗi trước khi recovery.');
+  const settleMs=snap.error.type==='CONNECTION_INTERRUPTED'?CFG.interruptionSettleMs:CFG.settleMs;
+  if (now() - S.faultSeenAt < settleMs) {
+    renderWebState(
+      snap,
+      snap.error.type==='CONNECTION_INTERRUPTED'
+        ? `Kết nối bị gián đoạn · ưu tiên chờ reconnect trước recovery (${Math.ceil((settleMs-(now()-S.faultSeenAt))/1000)}s).`
+        : 'Đang xác minh lỗi trước khi recovery.'
+    );
     return;
   }
 

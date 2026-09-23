@@ -16,19 +16,17 @@ style.textContent = `
 #gitl9 [data-a="report"],
 #gitl9 [data-a="copy"],
 #gitl9 [data-a="md"],
-#gitl9 [data-a="json"],
-#gitl9 [data-a="unload"] { font-size: 0 !important; }
+#gitl9 [data-a="json"] { font-size: 0 !important; }
 
 #gitl9 [data-tab="play"]::after { content: "Chạy"; font-size: 12px; }
 #gitl9 [data-tab="export"]::after { content: "Xuất"; font-size: 12px; }
 #gitl9 [data-a="play"]::after { content: "▶ Chạy"; font-size: 12px; }
 #gitl9 [data-a="stop"]::after { content: "■ Dừng"; font-size: 12px; }
 #gitl9 [data-a="reload"]::after { content: "↻ Tải lại"; font-size: 12px; }
-#gitl9 [data-a="report"]::after { content: "Sao chép báo cáo"; font-size: 12px; }
+#gitl9 [data-a="report"]::after { content: "Sao chép báo cáo lỗi"; font-size: 12px; }
 #gitl9 [data-a="copy"]::after { content: "Sao chép MD"; font-size: 12px; }
 #gitl9 [data-a="md"]::after { content: "Lưu MD"; font-size: 12px; }
 #gitl9 [data-a="json"]::after { content: "Lưu JSON"; font-size: 12px; }
-#gitl9 [data-a="unload"]::after { content: "⏏ Gỡ khỏi tab"; font-size: 12px; }
 
 #gitl9 [data-pane="play"] > .tiny:not([data-runtime]),
 #gitl9 [data-pane="aoa"] > .tiny,

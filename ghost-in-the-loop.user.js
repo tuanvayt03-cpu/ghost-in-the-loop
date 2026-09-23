@@ -587,7 +587,7 @@ function render() {
     <div class="status"><b>${esc(S.mode)}</b> · round ${S.round}/${S.max}<br>${esc(S.detail)}</div>
     <div class="pane ${S.tab==='play'?'show':''}" data-pane="play">
       <div class="row"><button class="on" data-a="play">▶ Play</button><button class="stop" data-a="stop">■ Stop</button><button data-a="reload">↻ Page</button></div>
-      <div class="row" style="margin-top:5px"><input data-max type="number" min="1" max="100" value="${S.max}"><button data-a="report">Copy report</button><button class="stop" data-a="unload">⏏ Unload</button></div>
+      <div class="row" style="margin-top:5px"><input data-max type="number" min="1" max="100" value="${S.max}"></div>
       <div class="tiny">Core only: final control line → one Send → repeat. No automatic resend after an uncertain Send.</div>
       <div class="tiny" data-runtime>runtime G${rd?.generation||'?'} · resources ${rtCount}</div>
     </div>
@@ -598,6 +598,7 @@ function render() {
     </div>
     <div class="pane ${S.tab==='export'?'show':''}" data-pane="export">
       <div class="row"><button data-a="copy">Copy MD</button><button data-a="md">Save MD</button><button data-a="json">Save JSON</button></div>
+      <div class="row" style="margin-top:5px"><button data-a="report">Copy diagnostic report</button></div>
       <div class="tiny">API-first where supported; DOM fallback is explicitly marked partial.</div>
     </div>`);
 
@@ -616,7 +617,6 @@ RT.listen(panel,'click',e=>{
   if(a==='copy'){doExport('copy');return}
   if(a==='md'){doExport('md');return}
   if(a==='json'){doExport('json');return}
-  if(a==='unload'&&e.isTrusted){window.__ghostPlusRuntime?.destroy?.('operator-unload');return}
 });
 RT.listen(panel,'change',e=>{
   const el=e.target;

@@ -23,7 +23,7 @@ assert.match(manager,/h\.abort\(\)/);
 assert.match(manager,/Object\.defineProperty\(p\.obj,p\.key,p\.desc\)/);
 assert.match(manager,/ghostplusLastDiagnostics/);
 assert.match(manager,/allZero:Object\.values\(totals\)\.every/);
-assert.match(loader,/ghostplus\.15\.5/);
+assert.match(loader,/ghostplus\.15\.6/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);
@@ -74,3 +74,9 @@ assert.match(core,/clearContinuity\(\); complete/,'HALT/complete must clear cont
 const coreHeader=read('ghost-in-the-loop.user.js');
 assert.match(coreHeader,/👻 GHOST <span class="brandver">· v/,'visible version next to Ghost missing');
 assert.match(coreHeader,/scrollDebugActive\?' · DBG':''/,'DBG indicator missing');
+
+const corePlay=read('ghost-in-the-loop.user.js');
+const playBody=corePlay.slice(corePlay.indexOf('async function play()'),corePlay.indexOf('function pause(',corePlay.indexOf('async function play()')));
+assert.match(playBody,/if \(generating\(\)\) \{/,'active generation adopt branch missing');
+assert.match(playBody,/Adopted active ChatGPT turn · monitoring without sending/,'active generation adopt detail missing');
+assert.ok(playBody.indexOf('if (generating()) {') < playBody.indexOf('} else if (draft.trim())'),'active generation must be adopted without Send before draft bootstrap');

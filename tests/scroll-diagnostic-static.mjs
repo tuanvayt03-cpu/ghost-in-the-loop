@@ -21,3 +21,8 @@ assert.match(core,/data-pane="export"[\s\S]*data-a="report"/,'diagnostic report 
 console.log('Ghost scroll diagnostic static audit: PASS');
 
 assert.match(diag,/ghostScrollDiagActive='1'/,'diagnostic active marker missing');
+
+assert.match(diag,/ghost-scroll-diag-widget/,'visible debug widget missing');
+assert.match(diag,/data-dbg-copy/,'visible debug Copy button missing');
+assert.match(diag,/data-dbg-log/,'visible debug Log button missing');
+assert.match(diag,/lastSnapshot\|\|currentSnapshot\('manual-copy'\)/,'Copy must fall back to a manual snapshot');

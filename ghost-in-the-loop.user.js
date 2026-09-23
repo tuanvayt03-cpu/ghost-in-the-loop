@@ -450,7 +450,12 @@ async function play() {
   if (!input) { fail('PLAY-INPUT', 'Current chat composer was not found.', { host: HOST.id }); return; }
   S.mode = 'RUNNING'; S.detail = 'Starting...'; S.lastHandled = ''; S.stableHash = ''; S.stableSince = 0; S.drift = 0; S.relay = ''; render();
   const draft = nodeText(input); const latest = assistantText(); const parsed = terminal(latest);
-  if (draft.trim()) {
+  if (generating()) {
+    S.bootstrapped = true;
+    S.detail = 'Adopted active ChatGPT turn · monitoring without sending';
+    log('adopt-active-turn',{assistantPresent:!!latest,draftPresent:!!draft.trim()});
+    render();
+  } else if (draft.trim()) {
     S.bootstrapped = true; if (!await sendOnce(bootstrapPrompt(draft), 'initial task')) return;
   } else if (!latest) {
     pause('Type a task into the chat first, then press Play.'); return;

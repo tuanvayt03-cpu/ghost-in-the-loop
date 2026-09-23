@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.5`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.6`.
 
 ## Added behavior
 
@@ -262,3 +262,14 @@ The manual diagnostic is `debug/ghost-scroll-diagnostic.user.js`. It is not incl
 - The right side of the header now shows only the current platform, e.g. `chatgpt`.
 - The standalone Scroll Diagnostic publishes `data-ghost-scroll-diag-active="1"` while it is loaded. Ghost displays `· DBG` beside the version when that separate diagnostic userscript is active.
 - Scroll Diagnostic remains a separate Tampermonkey userscript and is still not part of the production Ghost loader.
+
+
+## v0.15.6 adopt active turn + visible Scroll Debug controls
+
+- Pressing **Play** while ChatGPT is already generating now adopts the in-flight turn instead of requiring a new draft or injecting another message.
+- Active-turn adoption performs no Send. Ghost switches to RUNNING, monitors the existing generation, then applies the normal terminal/drift logic after generation ends.
+- Any unsent composer draft present during an active generation is left untouched.
+- The standalone Scroll Diagnostic is bumped to v0.2.0 and adds a small page widget: **DBG · Copy · Log**.
+- **Copy** copies the latest captured stall snapshot. If no stall has been captured yet, it first records a manual current-state snapshot and copies that.
+- **Log** records the current state without waiting for a stall.
+- Tampermonkey menu commands remain as a fallback, but the page widget is the primary operator path.

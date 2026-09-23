@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Ghost Scroll Diagnostic (manual)
 // @namespace    https://github.com/tuanvayt03-cpu/ghost-in-the-loop
-// @version      0.1.0
+// @version      0.2.0
 // @description  Manual passive diagnostic for intermittent ChatGPT scroll stalls. Not part of Ghost production loader.
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -46,14 +46,38 @@ function overlayStack(x,y){try{return document.elementsFromPoint(x,y).slice(0,6)
 function safeSnapshot(reason,event,scroller,before,after){
   const root=document.scrollingElement||document.documentElement;
   let selection=false;try{selection=!!window.getSelection?.()&&!window.getSelection().isCollapsed}catch(_){}
-  const snap={version:'0.1.0',at:new Date().toISOString(),reason,wheel:{deltaX:Number(event?.deltaX)||0,deltaY:Number(event?.deltaY)||0,defaultPrevented:!!event?.defaultPrevented},target:desc(event?.target),scroller:{before,after},documentScroller:metrics(root),htmlOverflow:getComputedStyle(document.documentElement).overflowY,bodyOverflow:document.body?getComputedStyle(document.body).overflowY:null,activeElement:desc(document.activeElement),selectionActive:selection,generating:generating(),ghost:{present:!!document.querySelector('#gitl9'),status:norm(document.querySelector('#gitl9 .status')?.textContent||'').slice(0,160),runtimeGeneration:document.documentElement.dataset.ghostplusRuntimeGeneration||null},stack:overlayStack(Number(event?.clientX)||0,Number(event?.clientY)||0)};
+  const snap={version:'0.2.0',at:new Date().toISOString(),reason,wheel:{deltaX:Number(event?.deltaX)||0,deltaY:Number(event?.deltaY)||0,defaultPrevented:!!event?.defaultPrevented},target:desc(event?.target),scroller:{before,after},documentScroller:metrics(root),htmlOverflow:getComputedStyle(document.documentElement).overflowY,bodyOverflow:document.body?getComputedStyle(document.body).overflowY:null,activeElement:desc(document.activeElement),selectionActive:selection,generating:generating(),ghost:{present:!!document.querySelector('#gitl9'),status:norm(document.querySelector('#gitl9 .status')?.textContent||'').slice(0,160),runtimeGeneration:document.documentElement.dataset.ghostplusRuntimeGeneration||null},stack:overlayStack(Number(event?.clientX)||0,Number(event?.clientY)||0)};
   lastSnapshot=snap;
   try{document.documentElement.dataset.ghostScrollLastDiagnostic=JSON.stringify(snap)}catch(_){}
   try{console.warn('[Ghost ScrollDiag] wheel produced no scroll movement',snap)}catch(_){}
   return snap;
 }
+function currentSnapshot(reason='manual-state'){
+  const root=document.scrollingElement||document.documentElement,m=metrics(root);
+  return safeSnapshot(reason,{deltaX:0,deltaY:0,defaultPrevented:false,target:document.activeElement,clientX:innerWidth/2,clientY:innerHeight/2},root,m,m);
+}
+function copySnapshot(){
+  const snap=lastSnapshot||currentSnapshot('manual-copy');
+  const raw=JSON.stringify(snap,null,2);
+  try{GM_setClipboard(raw,'text')}catch(_){try{navigator.clipboard?.writeText?.(raw)}catch(_){}}
+  return raw;
+}
+function addWidget(){
+  if(document.querySelector('#ghost-scroll-diag-widget'))return;
+  const wrap=document.createElement('div');
+  wrap.id='ghost-scroll-diag-widget';
+  wrap.innerHTML='<span data-dbg-title>DBG</span><button type="button" data-dbg-copy>Copy</button><button type="button" data-dbg-log>Log</button>';
+  Object.assign(wrap.style,{position:'fixed',right:'14px',bottom:'14px',zIndex:'2147483646',display:'flex',gap:'4px',alignItems:'center',padding:'5px 6px',border:'1px solid #f59e0b',borderRadius:'9px',background:'rgba(255,251,235,.96)',boxShadow:'0 2px 10px rgba(0,0,0,.15)',font:'12px/1.2 system-ui,sans-serif',color:'#92400e'});
+  for(const b of wrap.querySelectorAll('button'))Object.assign(b.style,{border:'1px solid #fbbf24',borderRadius:'6px',background:'#fff',padding:'3px 7px',cursor:'pointer',font:'inherit'});
+  wrap.querySelector('[data-dbg-copy]').addEventListener('click',()=>{
+    copySnapshot();
+    const t=wrap.querySelector('[data-dbg-title]');const old=t.textContent;t.textContent='Copied';setTimeout(()=>{if(t.isConnected)t.textContent=old},900);
+  });
+  wrap.querySelector('[data-dbg-log]').addEventListener('click',()=>currentSnapshot('manual-widget-log'));
+  (document.body||document.documentElement).appendChild(wrap);
+}
 function onWheel(event){
-  if(event.target instanceof Element&&event.target.closest('#gitl9,#ghostplus-watch,#ghostplus-mini,#ghostplus-collapse'))return;
+  if(event.target instanceof Element&&event.target.closest('#gitl9,#ghostplus-watch,#ghostplus-mini,#ghostplus-collapse,#ghost-scroll-diag-widget'))return;
   const t=now();if(t-lastCheckAt<200)return;lastCheckAt=t;
   const scroller=findScroller(event.target);
   const before=metrics(scroller);if(!before||before.height<=before.client+2)return;
@@ -70,14 +94,9 @@ function onWheel(event){
 }
 window.addEventListener('wheel',onWheel,{capture:true,passive:true});
 try{
-  GM_registerMenuCommand('Copy last scroll diagnostic',()=>{
-    const raw=document.documentElement.dataset.ghostScrollLastDiagnostic||JSON.stringify(lastSnapshot||{message:'No scroll stall captured yet.'},null,2);
-    GM_setClipboard(raw,'text');
-  });
-  GM_registerMenuCommand('Log current scroll state',()=>{
-    const root=document.scrollingElement||document.documentElement,m=metrics(root);
-    safeSnapshot('manual-state',{deltaX:0,deltaY:0,defaultPrevented:false,target:document.activeElement,clientX:innerWidth/2,clientY:innerHeight/2},root,m,m);
-  });
+  GM_registerMenuCommand('Copy last scroll diagnostic',copySnapshot);
+  GM_registerMenuCommand('Log current scroll state',()=>currentSnapshot('manual-menu-log'));
 }catch(_){}
-console.info('[Ghost ScrollDiag] active · passive only · no preventDefault/no programmatic scroll');
+addWidget();
+console.info('[Ghost ScrollDiag] active · widget ready · passive only · no preventDefault/no programmatic scroll');
 })();

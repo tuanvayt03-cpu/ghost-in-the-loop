@@ -24,7 +24,7 @@
     "test:e2e": "playwright test",
     "test:all": "jest && playwright test",
     "lint": "node --check ghost-in-the-loop.user.js && node --check extension/content.js && node --check scripts/certify-extension.js && node --check scripts/build-identity.js && node --check scripts/package-candidate.js",
-    "test:ghostplus-runtime": "node tests/runtime-lifecycle-vm.mjs && node tests/runtime-lifecycle-static.mjs"
+    "test:ghostplus-runtime": "node tests/runtime-lifecycle-vm.mjs && node tests/runtime-lifecycle-static.mjs && node tests/scroll-diagnostic-static.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

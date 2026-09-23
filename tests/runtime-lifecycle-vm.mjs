@@ -26,7 +26,7 @@ const assertAllZero=d=>{
 };
 
 const r1=boot();
-assert.equal(r1.version,'0.15.6');
+assert.equal(r1.version,'0.15.7');
 assert.equal(r1.generation,1);
 const s1=r1.module('vm-test');
 

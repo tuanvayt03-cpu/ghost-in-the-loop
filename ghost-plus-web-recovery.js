@@ -9,6 +9,8 @@ const CFG = Object.freeze({
   tickMs: 1250,
   settleMs: 4000,
   sendVerifyMs: 14000,
+  verifiedFailureRetryMax: 1,
+  verifiedFailureRetryDelayMs: 1500,
   clearStableMs: 5000,
   maxFaultText: 700
 });
@@ -25,6 +27,7 @@ const S = {
   faultSeenAt: 0,
   clearSince: 0,
   attemptedThisEpisode: false,
+  verifiedFailureRetries: 0,
   lastFaultKey: String(GM_getValue(K.lastFaultKey, '') || ''),
   lastFaultAttemptAt: Number(GM_getValue(K.lastFaultAttemptAt, 0)) || 0
 };
@@ -179,6 +182,40 @@ function scanWebError() {
   }
   return { type: '', text: '', retryVisible: retryButtons().length > 0 };
 }
+function managedRecoveryDraft(value,snap){
+  const t=norm(value);
+  const source=snap?.error?.type||'PLAY_SEND_UNCERTAIN';
+  return t.startsWith('[WEB RECOVERY STATUS PROBE]') && t.includes(`Recovery reason: ${source}.`);
+}
+function verifiedFailedSend(snap,{beforeUsers,beforeAssistants}={}){
+  const error=scanWebError();
+  const draft=composerText();
+  const evidence={
+    explicitTimeout:error.type==='SEND_TIMEOUT',
+    retryVisible:error.retryVisible===true,
+    notGenerating:!generating(),
+    userCountStable:users().length===beforeUsers,
+    assistantCountStable:assistants().length===beforeAssistants,
+    managedDraft:managedRecoveryDraft(draft,snap)
+  };
+  return {verified:Object.values(evidence).every(Boolean),evidence,error,draft};
+}
+function markAttempt(snap){
+  S.attemptedThisEpisode=true;
+  S.lastFaultKey=snap.key;
+  S.lastFaultAttemptAt=now();
+  GM_setValue(K.lastFaultKey,S.lastFaultKey);
+  GM_setValue(K.lastFaultAttemptAt,S.lastFaultAttemptAt);
+}
+function explicitFailureExhausted(snap,verdict){
+  markAttempt(snap);
+  S.recovering=false;
+  const msg='SEND_TIMEOUT đã được xác nhận là send FAILED; recovery retry 1/1 cũng failed rõ ràng. Không nâng HUMAN và không resend thêm trong fault episode này.';
+  renderWebState(snap,msg);
+  signal('SEND_TIMEOUT','warning','Ghost+ web supervisor',msg,{group:'web-recovery',reason:snap.error.text||msg,evidence:verdict?.evidence});
+  notice('Ghost+ web supervisor',msg);
+}
+
 function faultSnapshot() {
   const error = scanWebError();
   const status = ghostStatus();
@@ -332,31 +369,75 @@ async function sendRecoveryProbe(snap) {
     return;
   }
 
-  const beforeUsers = users().length;
-  const beforeAssistants = assistants().length;
+  let beforeUsers = users().length;
+  let beforeAssistants = assistants().length;
   if(!RT.alive()){S.recovering=false;return}
   try { gp.click(); } catch (e) {
     requireHuman(snap,'Không khởi động được Ghost recovery: '+String(e?.message||e));
     return;
   }
 
-  const accepted = await wait(
+  let accepted = await wait(
     () => generating() || users().length > beforeUsers || assistants().length > beforeAssistants || /^RUNNING\b/i.test(ghostStatus()),
     CFG.sendVerifyMs
   );
   if(!RT.alive()){S.recovering=false;return}
 
-  S.attemptedThisEpisode = true;
-  S.lastFaultKey = snap.key;
-  S.lastFaultAttemptAt = now();
-  GM_setValue(K.lastFaultKey, S.lastFaultKey);
-  GM_setValue(K.lastFaultAttemptAt, S.lastFaultAttemptAt);
-
   if (!accepted) {
-    requireHuman(snap,'Status probe chưa được xác nhận. Ghost+ sẽ không resend; cần kiểm tra thủ công.');
-    return;
+    let verdict=verifiedFailedSend(snap,{beforeUsers,beforeAssistants});
+    if(verdict.verified && S.verifiedFailureRetries < CFG.verifiedFailureRetryMax){
+      S.verifiedFailureRetries += 1;
+      renderWebState(snap,`SEND_TIMEOUT xác nhận send FAILED · retry recovery ${S.verifiedFailureRetries}/${CFG.verifiedFailureRetryMax}; không click nút Thử lại cũ.`);
+      const retryStop=ghostStop();
+      if(!visible(retryStop)){
+        requireHuman(snap,'Send timeout đã fail rõ nhưng không tìm thấy Ghost Stop để chuẩn bị retry recovery an toàn.');
+        return;
+      }
+      try{retryStop.click()}catch(e){
+        requireHuman(snap,'Không reset được Ghost trước verified-failure retry: '+String(e?.message||e));
+        return;
+      }
+      await sleep(CFG.verifiedFailureRetryDelayMs);if(!RT.alive()){S.recovering=false;return}
+      if(operatorLocked()){S.recovering=false;return}
+      if(!managedRecoveryDraft(composerText(),snap)){
+        requireHuman(snap,'Recovery draft đã thay đổi sau SEND_TIMEOUT; không retry vì outcome không còn chắc chắn.');
+        return;
+      }
+      const retryPlay=ghostPlay();
+      if(!visible(retryPlay)){
+        requireHuman(snap,'Không tìm thấy Ghost Play cho verified-failure retry.');
+        return;
+      }
+      beforeUsers=users().length;
+      beforeAssistants=assistants().length;
+      try{retryPlay.click()}catch(e){
+        requireHuman(snap,'Không khởi động được verified-failure retry: '+String(e?.message||e));
+        return;
+      }
+      accepted=await wait(
+        () => generating() || users().length > beforeUsers || assistants().length > beforeAssistants || /^RUNNING\b/i.test(ghostStatus()),
+        CFG.sendVerifyMs
+      );
+      if(!RT.alive()){S.recovering=false;return}
+      if(!accepted){
+        verdict=verifiedFailedSend(snap,{beforeUsers,beforeAssistants});
+        if(verdict.verified){
+          explicitFailureExhausted(snap,verdict);
+          return;
+        }
+        requireHuman(snap,'Recovery retry không được xác nhận và evidence không còn chứng minh send FAILED. Outcome thật sự uncertain; cần kiểm tra thủ công.');
+        return;
+      }
+    }else if(verdict.verified){
+      explicitFailureExhausted(snap,verdict);
+      return;
+    }else{
+      requireHuman(snap,'Status probe không được xác nhận và không đủ bằng chứng chứng minh send FAILED. Outcome thật sự uncertain; cần kiểm tra thủ công.');
+      return;
+    }
   }
 
+  markAttempt(snap);
   const correction = String(GM_getValue(K.correction, '') || '').trim();
   if (correction) GM_setValue(K.correction, '');
   renderWebState(snap, 'Đã gửi status probe mới. Không click nút Thử lại của request cũ.');
@@ -378,7 +459,7 @@ function sample() {
   if (!snap.active) {
     if (!S.clearSince) S.clearSince = now();
     if (now() - S.clearSince >= CFG.clearStableMs) {
-      S.faultKey = ''; S.faultSeenAt = 0; S.attemptedThisEpisode = false;
+      S.faultKey = ''; S.faultSeenAt = 0; S.attemptedThisEpisode = false; S.verifiedFailureRetries = 0;
     }
     return;
   }
@@ -388,6 +469,7 @@ function sample() {
     S.faultKey = snap.key;
     S.faultSeenAt = now();
     S.attemptedThisEpisode = false;
+    S.verifiedFailureRetries = 0;
   }
 
   if (snap.blockedType) {

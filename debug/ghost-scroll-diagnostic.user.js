@@ -16,6 +16,7 @@
 'use strict';
 if(window.__GHOST_SCROLL_DIAG__)return;
 window.__GHOST_SCROLL_DIAG__=true;
+try{document.documentElement.dataset.ghostScrollDiagActive='1'}catch(_){}
 const now=()=>Date.now();
 const norm=v=>String(v||'').replace(/\s+/g,' ').trim();
 let lastCheckAt=0,lastSnapshot=null;

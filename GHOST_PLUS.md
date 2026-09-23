@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.7`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.8`.
 
 ## Added behavior
 
@@ -291,3 +291,13 @@ The manual diagnostic is `debug/ghost-scroll-diagnostic.user.js`. It is not incl
 - If no stall has been captured, Copy creates a fresh `manual-copy-no-stall-captured` snapshot and marks `stallCaptured:false`.
 - Manual diagnostics scan visible internal elements for actual scroll containers (`overflow-y: auto/scroll/overlay` with scroll range) instead of assuming the document `html` element is the ChatGPT scroller.
 - Snapshots include `candidateScrollers` so the active ChatGPT internal scroll container can be identified even when the composer is outside it.
+
+
+## v0.15.8 late-accept reconciliation for transient HUMAN
+
+- HUMAN gates created by an assistant terminal marker remain hard and never auto-clear.
+- Web Recovery uncertainty gates are now tagged with provenance `WEB_SEND_UNCERTAIN`, plus user/assistant message-count baselines.
+- While such a transient gate is active, Operator Gate checks for late evidence that the send was actually accepted: ChatGPT becomes BUSY/generating, user-turn count advances, or assistant-turn count advances.
+- When late evidence appears, the transient HUMAN gate auto-clears and emits `GATE_AUTO_RECONCILED`.
+- If ChatGPT is already generating, Ghost automatically presses its own Play control after clearing so v0.15.6 active-turn adoption takes over without sending another message.
+- A genuine assistant `[[GITL::HUMAN]]` or model relay marker still overrides this mechanism and remains operator-gated.

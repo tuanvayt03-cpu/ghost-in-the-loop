@@ -15,6 +15,7 @@ const manager=read('ghost-plus-runtime-manager.js');
 const loader=read('ghost-plus.user.js');
 const watchdog=read('ghost-plus-companion-v2.js');
 const budget=read('ghost-plus-turn-budget-v2.js');
+const core=read('ghost-in-the-loop.user.js');
 
 assert.match(manager,/previous\.destroy\('reinject'\)/);
 assert.match(manager,/removeEventListener/);
@@ -22,7 +23,7 @@ assert.match(manager,/h\.abort\(\)/);
 assert.match(manager,/Object\.defineProperty\(p\.obj,p\.key,p\.desc\)/);
 assert.match(manager,/ghostplusLastDiagnostics/);
 assert.match(manager,/allZero:Object\.values\(totals\)\.every/);
-assert.match(loader,/ghostplus\.15\.2/);
+assert.match(loader,/ghostplus\.15\.3/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);
@@ -59,3 +60,13 @@ assert.match(watchdog,/last\?\.textContent \|\| ''/,'BUSY assistant hash must av
 assert.doesNotMatch(watchdog,/last\?\.innerText/,'BUSY assistant hash must not use innerText');
 assert.match(watchdog,/now\(\)-S\.lastLayoutAt < CFG\.layoutMs/,'watchdog layout throttle missing');
 assert.match(budget,/if\(startedAt && !ghostRunning\(\) && !T\.injectedText\)/,'stale Turn Budget reset missing');
+
+assert.match(watchdog,/continuityLeaseMs:\s*25\s*\*\s*60\s*\*\s*1000/,'continuity lease must stay at 25 minutes');
+assert.match(watchdog,/recover\(snap,\{allowStopped:true,source:'lease'\}\)/,'continuity lease safe recovery path missing');
+assert.match(watchdog,/snap\.busy\.busy\|\|operatorLocked\(\)\|\|ghostUncertain\(\)\|\|webErrorActive\(\)\|\|contextBoundaryActive\(\)/,'continuity safety gate regressed');
+assert.match(watchdog,/if\(composerText\(\)\)return false/,'continuity must not overwrite composer');
+assert.match(watchdog,/Outcome gửi không chắc chắn; không tự resend/,'unconfirmed recovery must not auto resend');
+assert.match(watchdog,/lock\('HUMAN_REQUIRED'/,'unconfirmed recovery must escalate to HUMAN');
+assert.doesNotMatch(watchdog,/sendOnce\(continuationPrompt/,'watchdog must never blind-send continue');
+assert.match(core,/armContinuity\(\)/,'confirmed core send must arm continuity lease');
+assert.match(core,/clearContinuity\(\); complete/,'HALT/complete must clear continuity lease');

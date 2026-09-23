@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.2`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.3`.
 
 ## Added behavior
 
@@ -231,3 +231,14 @@ A clean unload has `allZero: true` and every value under `totals` equal to `0`. 
 - Watchdog panel geometry is recomputed at most every 5 seconds unless the viewport width changes or the operator explicitly collapses/restores the panel.
 - Turn Budget clears a stale persisted timer whenever Ghost is no longer RUNNING and there is no staged Ghost-managed prompt.
 - No viewport-control capability is added: Ghost still does not own wheel/touch/scroll APIs.
+
+
+## v0.15.3 continuity lease
+
+- A confirmed Ghost send arms a 25-minute continuity lease.
+- HALT, HUMAN, RELAY, COMPLETE and explicit Stop clear the lease.
+- Lease expiry never blindly sends `continue` while ChatGPT is BUSY, generating, gated, uncertain, in a web-error state, at a context boundary, or while the composer contains user text.
+- After the lease expires and the task is safely IDLE for 30 seconds, Watchdog may send one normal reconciliation/status probe even if the core was paused by a recoverable non-uncertain condition.
+- The existing 5-minute IDLE watchdog remains the faster recovery path while Ghost is RUNNING; the 25-minute lease is a second continuity layer, not a replacement.
+- If Watchdog stages/actuates a recovery probe but cannot confirm Ghost restart, it now escalates to a persistent HUMAN gate + Telegram path. It does not retry/resend an uncertain actuation.
+- The Watchdog UI shows the lease countdown and `due · chờ safe IDLE` when expiry has occurred but safety conditions are not yet satisfied.

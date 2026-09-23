@@ -41,6 +41,7 @@ const DRIFT_QUIET_MS = 9000;
 const WRITE_VERIFY_MS = 1800;
 const SEND_WAIT_MS = 2200;
 const SEND_CONFIRM_MS = 16000;
+const CONTINUITY_KEY = 'ghostplus.continuityLeaseStartedAt';
 
 const G = Object.freeze({
   proceed: '[[GITL::PROCEED]]',
@@ -111,6 +112,8 @@ try { if (window.trustedTypes?.createPolicy) _ttPolicy = window.trustedTypes.cre
 const trustedHTML = s => _ttPolicy ? _ttPolicy.createHTML(s) : s;
 const sleep = ms => RT.sleep(ms);
 const now = () => Date.now();
+function armContinuity(){try{GM_setValue(CONTINUITY_KEY,now())}catch(_){}}
+function clearContinuity(){try{GM_setValue(CONTINUITY_KEY,0)}catch(_){}}
 const displayText = value => String(value ?? '').replace(/\u00a0/g, ' ').replace(/\r/g, '').trim();
 const semanticText = value => displayText(value).replace(/\s+/g, ' ').trim();
 function captureExternalSelection(el) {
@@ -212,6 +215,7 @@ function structured(type,severity,group,title,text,extra={}) {
   notify(title,text);
 }
 function humanBlock(detail) {
+  clearContinuity();
   pause(detail);
   try {
     if(window.__ghostPlusSupervisor?.lock){
@@ -370,6 +374,7 @@ async function sendOnce(text, reason) {
     S.uncertain = true; fail('PLAY-SEND-UNCERTAIN', 'Send was attempted but host acceptance could not be confirmed. Ghost will not resend.'); return false;
   }
   S.round += 1; S.awaitingFrom = beforeAssistantHash; S.stableHash = ''; S.stableSince = 0;
+  armContinuity();
   S.detail = `Sent once · ${confirmed.why}`; log('send-confirmed', { round: S.round, why: confirmed.why }); render(); return true;
 }
 
@@ -378,12 +383,12 @@ async function handleTerminal(text, parsed) {
   if (!text || fp === S.lastHandled || S.mode !== 'RUNNING' || S.sending) return;
   S.lastHandled = fp;
   if (parsed.type === 'halt') {
-    S.drift = 0; complete('Task complete');
+    S.drift = 0; clearContinuity(); complete('Task complete');
     structured('COMPLETE','info','complete','Ghost complete','The AI returned HALT.',{id:`core-halt:${fp}`});
     return;
   }
   if (parsed.type === 'human') {
-    S.drift = 0;
+    S.drift = 0; clearContinuity();
     try {
       if(window.__ghostPlusSupervisor?.lock) window.__ghostPlusSupervisor.lock('HUMAN_REQUIRED',{h:fp,reason:'The AI requested a human decision.'});
       else { pause('Human decision requested by the AI.'); notify('Ghost paused','The AI requested a human decision.'); }
@@ -391,7 +396,7 @@ async function handleTerminal(text, parsed) {
     return;
   }
   if (parsed.type === 'relay') {
-    S.drift = 0; S.relay = parsed.model;
+    S.drift = 0; clearContinuity(); S.relay = parsed.model;
     try {
       if(window.__ghostPlusSupervisor?.lock) window.__ghostPlusSupervisor.lock('MODEL_RELAY',{h:fp,reason:'Model Relay requested.',model:parsed.model});
       else { pause(`Model Relay requested: ${parsed.model}.`); notify('Model Relay requested',parsed.model); }
@@ -461,10 +466,11 @@ async function play() {
 }
 function pause(detail) { S.mode = 'PAUSED'; S.detail = detail; RT.clearInterval(S.timer); S.timer = null; render(); }
 function stop() {
+  clearContinuity();
   S.mode = 'IDLE'; S.detail = 'Stopped'; S.sending = false; S.uncertain = false; S.lastHandled = ''; S.awaitingFrom = ''; S.stableHash = ''; S.stableSince = 0; S.drift = 0;
   RT.clearInterval(S.timer); S.timer = null; log('stop'); render();
 }
-function complete(detail) { S.mode = 'COMPLETE'; S.detail = detail; RT.clearInterval(S.timer); S.timer = null; render(); }
+function complete(detail) { clearContinuity(); S.mode = 'COMPLETE'; S.detail = detail; RT.clearInterval(S.timer); S.timer = null; render(); }
 
 function domTurns() {
   const rows = [];

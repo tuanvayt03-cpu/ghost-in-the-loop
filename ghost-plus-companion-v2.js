@@ -13,6 +13,9 @@ const CFG = Object.freeze({
   settleMs: 5000,
   staleBusyWarnMs: 10 * 60 * 1000,
   ghostRestartVerifyMs: 12000,
+  continuityLeaseMs: 25 * 60 * 1000,
+  continuitySettleMs: 30000,
+  continuityAttemptCooldownMs: 60000,
   defaultTimeoutSec: 300,
   defaultRecoveryBudget: 2
 });
@@ -22,7 +25,8 @@ const K = Object.freeze({
   timeout: 'ghostplus.smartTimeout',
   auto: 'ghostplus.auto',
   budget: 'ghostplus.recoveryBudget',
-  correction: 'ghostplus.pendingCorrection'
+  correction: 'ghostplus.pendingCorrection',
+  lease: 'ghostplus.continuityLeaseStartedAt'
 });
 
 const q = (s, r = document) => r.querySelector(s);
@@ -99,6 +103,7 @@ const S = {
   lastDeepAt: 0,
   lastLayoutAt: 0,
   lastViewportWidth: 0,
+  continuityLastAttemptAt: 0,
   timer: null
 };
 GM_setValue(K.timeout, S.timeout);
@@ -121,6 +126,18 @@ function composerText() {
 function users() { return qa('[data-message-author-role="user"]').filter(el => el.isConnected); }
 function assistants() { return qa('[data-message-author-role="assistant"]').filter(el => el.isConnected); }
 function latestAssistant() { const list = assistants(); return list[list.length - 1] || null; }
+function latestTerminalType(){
+  const text=norm(latestAssistant()?.textContent||'');
+  const line=text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean).pop()||'';
+  if(line==='[[GITL::HALT]]'||line==='[[AOA::HALT]]')return'halt';
+  if(line==='[[GITL::HUMAN]]'||line==='[[AOA::HUMAN]]')return'human';
+  if(/^\[\[AOA::RELAY:/.test(line))return'relay';
+  if(line==='[[GITL::PROCEED]]'||line==='[[AOA::CONTINUE]]')return'proceed';
+  return'bad';
+}
+function leaseStartedAt(){return Number(GM_getValue(K.lease,0))||0}
+function clearLease(){try{GM_setValue(K.lease,0)}catch(_){}}
+function leaseRemaining(){const s=leaseStartedAt();return s?Math.max(0,CFG.continuityLeaseMs-(now()-s)):0}
 
 function semanticStopButtons() {
   const selectors = [
@@ -409,8 +426,8 @@ function contextBoundaryActive() {
   return !!q('#ghostplus-context-boundary-state');
 }
 
-async function recover(snap) {
-  if (!RT.alive() || S.recovering || !ghostRunning() || ghostUncertain() || operatorLocked()) return;
+async function recover(snap,{allowStopped=false,source='idle'}={}) {
+  if (!RT.alive() || S.recovering || (!ghostRunning()&&!allowStopped) || ghostUncertain() || operatorLocked()) return;
   const fresh = captureSnapshot();
   if (fresh.busy.busy) {
     S.suspectAt = 0;
@@ -473,7 +490,11 @@ async function recover(snap) {
   if(!RT.alive()){S.recovering=false;return}
   if (!restarted) {
     S.recovering = false;
-    notice('Ghost+ watchdog', 'Đã stage probe nhưng không xác nhận được Ghost bắt đầu lại. Không resend.');
+    clearLease();
+    const msg='Recovery probe đã được stage/actuate nhưng Ghost không xác nhận restart. Outcome gửi không chắc chắn; không tự resend.';
+    if(window.__ghostPlusSupervisor?.lock)window.__ghostPlusSupervisor.lock('HUMAN_REQUIRED',{reason:msg});
+    else signal('CORE_BLOCKED','critical','Ghost+ watchdog',msg,{group:'operator',reason:msg});
+    notice('Ghost+ watchdog',msg);
     return;
   }
 
@@ -486,7 +507,28 @@ async function recover(snap) {
     const input = q('#ghostplus-watch [data-correction]'); if (input) input.value = '';
   }
   S.lastProgressAt = now(); S.suspectAt = 0; S.recovering = false;
-  notice('Ghost+ watchdog', 'Đã gửi recovery status probe sau khi xác nhận ChatGPT không còn BUSY.');
+  notice('Ghost+ watchdog', source==='lease' ? 'Continuity lease đã nối task bằng status probe an toàn.' : 'Đã gửi recovery status probe sau khi xác nhận ChatGPT không còn BUSY.');
+}
+
+function continuityEligible(snap){
+  if(!S.auto||S.recovering||snap.busy.busy||operatorLocked()||ghostUncertain()||webErrorActive()||contextBoundaryActive())return false;
+  const started=leaseStartedAt();
+  if(!started||now()-started<CFG.continuityLeaseMs)return false;
+  const term=latestTerminalType();
+  if(term==='halt'||term==='human'||term==='relay'){clearLease();return false}
+  if(S.idleSince&&now()-S.idleSince<CFG.continuitySettleMs)return false;
+  if(composerText())return false;
+  if(now()-S.continuityLastAttemptAt<CFG.continuityAttemptCooldownMs)return false;
+  return true;
+}
+function runContinuityLease(snap){
+  if(!continuityEligible(snap))return false;
+  S.continuityLastAttemptAt=now();
+  recover(snap,{allowStopped:true,source:'lease'}).catch(e=>{
+    S.recovering=false;
+    notice('Ghost+ continuity error',String(e?.message||e));
+  });
+  return true;
 }
 
 function addStyle() {
@@ -529,6 +571,7 @@ function controls() {
         <select data-budget title="Số lần khôi phục liên tiếp"><option value="1">1 lần</option><option value="2">2 lần</option><option value="3">3 lần</option></select>
       </div>
       <div class="r" style="margin-top:4px"><label><input data-auto type="checkbox"> tự khôi phục khi IDLE</label><span style="color:#64748b">BUSY = không can thiệp</span></div>
+      <div class="r" style="margin-top:3px;color:#64748b"><span>Continuity lease</span><span data-lease>— / 25m</span></div>
       <div id="ghostplus-busy-detail"></div>
       <div id="ghostplus-correction"><input data-correction type="text" placeholder="Yêu cầu ưu tiên ở lần recovery kế tiếp"><button data-save-correction>Lưu</button></div>`;
     document.documentElement.appendChild(w);RT.node(w);
@@ -573,8 +616,12 @@ function collapse(value) {
 function render(snap = captureSnapshot()) {
   layout();
   const w=q('#ghostplus-watch'), m=q('#ghostplus-mini'); if(!w) return;
-  const state=q('[data-state]',w), clock=q('[data-clock]',w), dot=q('.gp-dot',w), detail=q('#ghostplus-busy-detail',w);
+  const state=q('[data-state]',w), clock=q('[data-clock]',w), dot=q('.gp-dot',w), detail=q('#ghostplus-busy-detail',w), leaseEl=q('[data-lease]',w);
   dot.className='gp-dot';
+  if(leaseEl){
+    const ls=leaseStartedAt(),remaining=leaseRemaining();
+    leaseEl.textContent=ls?(remaining?fmt(remaining)+' / 25m':'due · chờ safe IDLE'):'— / 25m';
+  }
   const elapsedSinceProgress = Math.max(0, now() - S.lastProgressAt);
   if (snap.busy.busy) {
     state.textContent = 'ĐANG THỰC THI'; dot.classList.add('busy');
@@ -613,6 +660,8 @@ function sample() {
     }
     render(snap); return;
   }
+
+  if (runContinuityLease(snap)) { render(snap); return; }
 
   if (operatorLocked() || !ghostRunning() || S.timeout===0 || S.recovering) {
     S.suspectAt = 0; render(snap); return;
@@ -657,6 +706,6 @@ function resetRecoveryEpisode() {
   S.lastProgressAt = now();
   S.idleSince = now();
 }
-window.__ghostPlusWatchdog = { resetRecoveryEpisode, state: () => ({ recoveryCount:S.recoveryCount, recoveryBudget:S.recoveryBudget, recovering:S.recovering }) };
+window.__ghostPlusWatchdog = { resetRecoveryEpisode, state: () => ({ recoveryCount:S.recoveryCount, recoveryBudget:S.recoveryBudget, recovering:S.recovering, continuityLeaseStartedAt:leaseStartedAt(), continuityRemainingMs:leaseRemaining() }) };
 RT.clearInterval(S.timer); S.timer = RT.interval(sample, CFG.tickMs);RT.cleanup(()=>{S.recovering=false;S.timer=null}); sample();
 })();

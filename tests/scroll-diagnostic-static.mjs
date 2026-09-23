@@ -19,3 +19,5 @@ const play=(core.match(/data-pane="play"[\s\S]*?data-pane="aoa"/)||[''])[0];
 assert.doesNotMatch(play,/data-a="report"/,'diagnostic report must not occupy the Play pane');
 assert.match(core,/data-pane="export"[\s\S]*data-a="report"/,'diagnostic report should remain under Export');
 console.log('Ghost scroll diagnostic static audit: PASS');
+
+assert.match(diag,/ghostScrollDiagActive='1'/,'diagnostic active marker missing');

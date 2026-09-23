@@ -23,7 +23,7 @@ assert.match(manager,/h\.abort\(\)/);
 assert.match(manager,/Object\.defineProperty\(p\.obj,p\.key,p\.desc\)/);
 assert.match(manager,/ghostplusLastDiagnostics/);
 assert.match(manager,/allZero:Object\.values\(totals\)\.every/);
-assert.match(loader,/ghostplus\.15\.4/);
+assert.match(loader,/ghostplus\.15\.5/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);
@@ -70,3 +70,7 @@ assert.match(watchdog,/lock\('HUMAN_REQUIRED'/,'unconfirmed recovery must escala
 assert.doesNotMatch(watchdog,/sendOnce\(continuationPrompt/,'watchdog must never blind-send continue');
 assert.match(core,/armContinuity\(\)/,'confirmed core send must arm continuity lease');
 assert.match(core,/clearContinuity\(\); complete/,'HALT/complete must clear continuity lease');
+
+const coreHeader=read('ghost-in-the-loop.user.js');
+assert.match(coreHeader,/👻 GHOST <span class="brandver">· v/,'visible version next to Ghost missing');
+assert.match(coreHeader,/scrollDebugActive\?' · DBG':''/,'DBG indicator missing');

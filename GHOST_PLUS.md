@@ -249,3 +249,8 @@ A clean unload has `allZero: true` and every value under `totals` equal to `0`. 
 - Play pane no longer shows **Copy report** or **Unload**.
 - Diagnostic report remains available under the Export tab as **Sao chép báo cáo lỗi**.
 - Runtime unload remains an internal lifecycle capability but is no longer presented as a normal operator control because live A/B testing showed unloading Ghost does not resolve the intermittent ChatGPT scroll stall.
+
+
+### Isolated scroll diagnostic
+
+The manual diagnostic is `debug/ghost-scroll-diagnostic.user.js`. It is not included by `ghost-plus.user.js` and therefore adds no wheel listener to production Ghost. When temporarily installed, it uses one capture-phase passive wheel listener only. It never calls `preventDefault`, never assigns `scrollTop`, and never calls programmatic scroll APIs. A non-boundary wheel gesture with no movement produces a secret-free snapshot at `document.documentElement.dataset.ghostScrollLastDiagnostic` and a `[Ghost ScrollDiag]` console warning.

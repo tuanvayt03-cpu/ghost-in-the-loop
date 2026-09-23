@@ -282,3 +282,12 @@ The manual diagnostic is `debug/ghost-scroll-diagnostic.user.js`. It is not incl
 - `VERIFIED_FAILED` gets one controlled Ghost recovery retry. Ghost never clicks ChatGPT's old Retry/Try again button.
 - If the one retry also has the same explicit failure evidence, the fault remains `SEND_TIMEOUT` and emits a warning; it does **not** create a HUMAN gate and does not resend again during that fault episode.
 - HUMAN is reserved for genuinely uncertain/mixed evidence: message counts advanced, generation state changed, the managed recovery draft changed/disappeared, or other evidence no longer proves a failed send.
+
+
+### Scroll Diagnostic v0.3.0
+
+- Manual Copy no longer reuses a stale manual snapshot as if it were a captured stall.
+- Real `wheel-no-movement` captures are stored separately as the last stall snapshot.
+- If no stall has been captured, Copy creates a fresh `manual-copy-no-stall-captured` snapshot and marks `stallCaptured:false`.
+- Manual diagnostics scan visible internal elements for actual scroll containers (`overflow-y: auto/scroll/overlay` with scroll range) instead of assuming the document `html` element is the ChatGPT scroller.
+- Snapshots include `candidateScrollers` so the active ChatGPT internal scroll container can be identified even when the composer is outside it.

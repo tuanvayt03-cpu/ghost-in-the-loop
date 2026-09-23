@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Ghost Scroll Diagnostic (manual)
 // @namespace    https://github.com/tuanvayt03-cpu/ghost-in-the-loop
-// @version      0.2.0
+// @version      0.3.0
 // @description  Manual passive diagnostic for intermittent ChatGPT scroll stalls. Not part of Ghost production loader.
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -19,7 +19,7 @@ window.__GHOST_SCROLL_DIAG__=true;
 try{document.documentElement.dataset.ghostScrollDiagActive='1'}catch(_){}
 const now=()=>Date.now();
 const norm=v=>String(v||'').replace(/\s+/g,' ').trim();
-let lastCheckAt=0,lastSnapshot=null;
+let lastCheckAt=0,lastSnapshot=null,lastStallSnapshot=null;
 function desc(el){
   if(!el)return null;
   const tag=(el.tagName||'').toLowerCase();
@@ -37,27 +37,65 @@ function scrollable(el){
   let cs;try{cs=getComputedStyle(el)}catch(_){return false}
   return /(auto|scroll|overlay)/.test(cs.overflowY||'')&&el.scrollHeight>el.clientHeight+2;
 }
-function findScroller(target){
+function visibleArea(el){
+  try{
+    const r=el.getBoundingClientRect();
+    const w=Math.max(0,Math.min(innerWidth,r.right)-Math.max(0,r.left));
+    const h=Math.max(0,Math.min(innerHeight,r.bottom)-Math.max(0,r.top));
+    return w*h;
+  }catch(_){return 0}
+}
+function discoverScrollers(limit=8){
+  const out=[];
+  let seen=0;
+  for(const el of document.querySelectorAll('body *')){
+    if(++seen>5000)break;
+    if(!(el instanceof Element)||el.id==='ghost-scroll-diag-widget')continue;
+    const client=Number(el.clientHeight)||0, height=Number(el.scrollHeight)||0;
+    if(client<100||height<=client+2)continue;
+    let cs;try{cs=getComputedStyle(el)}catch(_){continue}
+    if(!/(auto|scroll|overlay)/.test(cs.overflowY||''))continue;
+    const area=visibleArea(el);
+    if(area<=0)continue;
+    out.push({el,score:area+Math.min(100000,height-client),m:metrics(el)});
+  }
+  out.sort((a,b)=>b.score-a.score);
+  return out.slice(0,limit);
+}
+function findScroller(target,x,y){
   for(let el=target instanceof Element?target:null;el;el=el.parentElement)if(scrollable(el))return el;
-  return document.scrollingElement||document.documentElement;
+  if(Number.isFinite(x)&&Number.isFinite(y)){
+    try{
+      for(const hit of document.elementsFromPoint(x,y)){
+        for(let el=hit;el;el=el.parentElement)if(scrollable(el))return el;
+      }
+    }catch(_){}
+  }
+  return discoverScrollers(1)[0]?.el||document.scrollingElement||document.documentElement;
 }
 function generating(){return !!document.querySelector('button[data-testid="stop-button"],button[aria-label="Stop generating"],button[aria-label="Stop streaming"]')}
 function overlayStack(x,y){try{return document.elementsFromPoint(x,y).slice(0,6).map(desc)}catch(_){return[]}}
 function safeSnapshot(reason,event,scroller,before,after){
   const root=document.scrollingElement||document.documentElement;
   let selection=false;try{selection=!!window.getSelection?.()&&!window.getSelection().isCollapsed}catch(_){}
-  const snap={version:'0.2.0',at:new Date().toISOString(),reason,wheel:{deltaX:Number(event?.deltaX)||0,deltaY:Number(event?.deltaY)||0,defaultPrevented:!!event?.defaultPrevented},target:desc(event?.target),scroller:{before,after},documentScroller:metrics(root),htmlOverflow:getComputedStyle(document.documentElement).overflowY,bodyOverflow:document.body?getComputedStyle(document.body).overflowY:null,activeElement:desc(document.activeElement),selectionActive:selection,generating:generating(),ghost:{present:!!document.querySelector('#gitl9'),status:norm(document.querySelector('#gitl9 .status')?.textContent||'').slice(0,160),runtimeGeneration:document.documentElement.dataset.ghostplusRuntimeGeneration||null},stack:overlayStack(Number(event?.clientX)||0,Number(event?.clientY)||0)};
+  const candidates=discoverScrollers(6).map(x=>x.m);
+  const snap={version:'0.3.0',at:new Date().toISOString(),reason,stallCaptured:reason==='wheel-no-movement',wheel:{deltaX:Number(event?.deltaX)||0,deltaY:Number(event?.deltaY)||0,defaultPrevented:!!event?.defaultPrevented},target:desc(event?.target),scroller:{before,after},candidateScrollers:candidates,documentScroller:metrics(root),htmlOverflow:getComputedStyle(document.documentElement).overflowY,bodyOverflow:document.body?getComputedStyle(document.body).overflowY:null,activeElement:desc(document.activeElement),selectionActive:selection,generating:generating(),ghost:{present:!!document.querySelector('#gitl9'),status:norm(document.querySelector('#gitl9 .status')?.textContent||'').slice(0,160),runtimeGeneration:document.documentElement.dataset.ghostplusRuntimeGeneration||null},stack:overlayStack(Number(event?.clientX)||0,Number(event?.clientY)||0)};
   lastSnapshot=snap;
+  if(snap.stallCaptured)lastStallSnapshot=snap;
   try{document.documentElement.dataset.ghostScrollLastDiagnostic=JSON.stringify(snap)}catch(_){}
-  try{console.warn('[Ghost ScrollDiag] wheel produced no scroll movement',snap)}catch(_){}
+  try{
+    if(snap.stallCaptured)console.warn('[Ghost ScrollDiag] wheel produced no scroll movement',snap);
+    else console.info('[Ghost ScrollDiag] manual snapshot',snap);
+  }catch(_){}
   return snap;
 }
 function currentSnapshot(reason='manual-state'){
-  const root=document.scrollingElement||document.documentElement,m=metrics(root);
-  return safeSnapshot(reason,{deltaX:0,deltaY:0,defaultPrevented:false,target:document.activeElement,clientX:innerWidth/2,clientY:innerHeight/2},root,m,m);
+  const candidate=discoverScrollers(1)[0]?.el||document.scrollingElement||document.documentElement;
+  const m=metrics(candidate);
+  return safeSnapshot(reason,{deltaX:0,deltaY:0,defaultPrevented:false,target:document.activeElement,clientX:innerWidth/2,clientY:innerHeight/2},candidate,m,m);
 }
 function copySnapshot(){
-  const snap=lastSnapshot||currentSnapshot('manual-copy');
+  const snap=lastStallSnapshot||currentSnapshot('manual-copy-no-stall-captured');
   const raw=JSON.stringify(snap,null,2);
   try{GM_setClipboard(raw,'text')}catch(_){try{navigator.clipboard?.writeText?.(raw)}catch(_){}}
   return raw;
@@ -70,8 +108,11 @@ function addWidget(){
   Object.assign(wrap.style,{position:'fixed',right:'14px',bottom:'14px',zIndex:'2147483646',display:'flex',gap:'4px',alignItems:'center',padding:'5px 6px',border:'1px solid #f59e0b',borderRadius:'9px',background:'rgba(255,251,235,.96)',boxShadow:'0 2px 10px rgba(0,0,0,.15)',font:'12px/1.2 system-ui,sans-serif',color:'#92400e'});
   for(const b of wrap.querySelectorAll('button'))Object.assign(b.style,{border:'1px solid #fbbf24',borderRadius:'6px',background:'#fff',padding:'3px 7px',cursor:'pointer',font:'inherit'});
   wrap.querySelector('[data-dbg-copy]').addEventListener('click',()=>{
-    copySnapshot();
-    const t=wrap.querySelector('[data-dbg-title]');const old=t.textContent;t.textContent='Copied';setTimeout(()=>{if(t.isConnected)t.textContent=old},900);
+    const raw=copySnapshot();
+    const parsed=(()=>{try{return JSON.parse(raw)}catch(_){return null}})();
+    const t=wrap.querySelector('[data-dbg-title]'),old=t.textContent;
+    t.textContent=parsed?.stallCaptured?'STALL COPIED':'STATE COPIED';
+    setTimeout(()=>{if(t.isConnected)t.textContent=old},1200);
   });
   wrap.querySelector('[data-dbg-log]').addEventListener('click',()=>currentSnapshot('manual-widget-log'));
   (document.body||document.documentElement).appendChild(wrap);
@@ -79,7 +120,7 @@ function addWidget(){
 function onWheel(event){
   if(event.target instanceof Element&&event.target.closest('#gitl9,#ghostplus-watch,#ghostplus-mini,#ghostplus-collapse,#ghost-scroll-diag-widget'))return;
   const t=now();if(t-lastCheckAt<200)return;lastCheckAt=t;
-  const scroller=findScroller(event.target);
+  const scroller=findScroller(event.target,event.clientX,event.clientY);
   const before=metrics(scroller);if(!before||before.height<=before.client+2)return;
   const dy=Number(event.deltaY)||0;if(Math.abs(dy)<2)return;
   const max=Math.max(0,before.height-before.client);

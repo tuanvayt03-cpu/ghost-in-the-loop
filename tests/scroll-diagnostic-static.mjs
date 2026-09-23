@@ -25,4 +25,9 @@ assert.match(diag,/ghostScrollDiagActive='1'/,'diagnostic active marker missing'
 assert.match(diag,/ghost-scroll-diag-widget/,'visible debug widget missing');
 assert.match(diag,/data-dbg-copy/,'visible debug Copy button missing');
 assert.match(diag,/data-dbg-log/,'visible debug Log button missing');
-assert.match(diag,/lastSnapshot\|\|currentSnapshot\('manual-copy'\)/,'Copy must fall back to a manual snapshot');
+assert.match(diag,/lastStallSnapshot\|\|currentSnapshot\('manual-copy-no-stall-captured'\)/,'Copy must distinguish real stall from manual snapshot');
+
+assert.match(diag,/function discoverScrollers\(limit=8\)/,'manual diagnostics must discover internal scroll containers');
+assert.match(diag,/candidateScrollers:candidates/,'snapshot must include candidate internal scrollers');
+assert.match(diag,/stallCaptured:reason==='wheel-no-movement'/,'snapshot must distinguish a real stall');
+assert.match(diag,/lastStallSnapshot=snap/,'real stall snapshot must be retained separately');

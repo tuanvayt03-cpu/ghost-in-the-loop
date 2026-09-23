@@ -23,7 +23,7 @@ assert.match(manager,/h\.abort\(\)/);
 assert.match(manager,/Object\.defineProperty\(p\.obj,p\.key,p\.desc\)/);
 assert.match(manager,/ghostplusLastDiagnostics/);
 assert.match(manager,/allZero:Object\.values\(totals\)\.every/);
-assert.match(loader,/ghostplus\.15\.8/);
+assert.match(loader,/ghostplus\.15\.9/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);
@@ -45,8 +45,7 @@ for(const file of modules){
 assert.match(read('ghost-plus-turn-budget-v2.js'),/RT\.patch\(HTMLButtonElement\.prototype,'click',wrapped\)/);
 assert.match(read('ghost-plus-telegram.js'),/RT\.abortable\(h\)/);
 assert.match(read('ghost-plus-telegram.js'),/RT\.cleanup\(unsubscribe\)/);
-assert.match(read('ghost-in-the-loop.user.js'),/data-a="unload"/);
-assert.match(read('ghost-in-the-loop.user.js'),/destroy\?\.\('operator-unload'\)/);
+assert.doesNotMatch(read('ghost-in-the-loop.user.js'),/data-a="unload"/,'Unload must stay out of the production panel');
 
 for(const file of ['ghost-in-the-loop.user.js','ghost-plus-operator-gate.js','ghost-plus-companion-v2.js','ghost-plus-web-recovery.js','ghost-plus-turn-budget-v2.js']){
   assert.match(read(file),/preventScroll:true/,`${file}: composer focus must prevent scroll`);
@@ -83,8 +82,8 @@ assert.ok(playBody.indexOf('if (generating()) {') < playBody.indexOf('} else if 
 
 const webRecovery=read('ghost-plus-web-recovery.js');
 assert.match(webRecovery,/verifiedFailureRetryMax:\s*1/,'verified SEND_TIMEOUT retry budget regressed');
-assert.match(webRecovery,/explicitTimeout:error\.type==='SEND_TIMEOUT'/,'verified SEND_TIMEOUT classification regressed');
-assert.match(webRecovery,/retryVisible:error\.retryVisible===true/,'Retry button evidence missing');
+assert.match(webRecovery,/\['SEND_TIMEOUT','CONNECTION_INTERRUPTED'\]\.includes\(error\.type\)/,'explicit recoverable failure classification regressed');
+assert.match(webRecovery,/const retryEvidence=error\.type==='SEND_TIMEOUT'\?error\.retryVisible===true:true/,'SEND_TIMEOUT Retry evidence or connection-interrupted exception missing');
 assert.match(webRecovery,/userCountStable:users\(\)\.length===beforeUsers/,'user-count evidence missing');
 assert.match(webRecovery,/assistantCountStable:assistants\(\)\.length===beforeAssistants/,'assistant-count evidence missing');
 assert.match(webRecovery,/managedDraft:managedRecoveryDraft\(draft,snap\)/,'managed recovery draft evidence missing');
@@ -102,3 +101,10 @@ assert.match(gateRuntime,/if\(busy\)\{/,'busy late-accept must adopt active turn
 assert.doesNotMatch(gateRuntime,/transient:'WEB_SEND_UNCERTAIN'.*\[\[GITL::HUMAN\]\]/s,'assistant HUMAN must remain hard');
 assert.match(webRecovery,/transient:'WEB_SEND_UNCERTAIN'/,'web recovery uncertainty must mark transient gate provenance');
 assert.match(webRecovery,/baselineUsers:beforeUsers,baselineAssistants:beforeAssistants/,'web recovery uncertainty must carry message baselines');
+
+assert.match(webRecovery,/kết nối bị gián đoạn/,'connection interrupted Vietnamese detector missing');
+assert.match(webRecovery,/đang chờ câu trả lời hoàn chỉnh/,'waiting-for-complete-response detector missing');
+assert.match(webRecovery,/return 'CONNECTION_INTERRUPTED'/,'CONNECTION_INTERRUPTED classification missing');
+assert.match(webRecovery,/interruptionSettleMs:\s*30000/,'connection interruption reconnect grace regressed');
+assert.match(webRecovery,/\['SEND_TIMEOUT','CONNECTION_INTERRUPTED','NETWORK_ERROR','GENERATION_ERROR'\]/,'CONNECTION_INTERRUPTED must remain recoverable');
+assert.match(webRecovery,/clearManagedRecoveryDraft\(snap\)/,'verified failed recovery must clear its own staged draft');

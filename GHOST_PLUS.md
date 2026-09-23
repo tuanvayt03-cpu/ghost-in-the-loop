@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.8`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.9`.
 
 ## Added behavior
 
@@ -301,3 +301,14 @@ The manual diagnostic is `debug/ghost-scroll-diagnostic.user.js`. It is not incl
 - When late evidence appears, the transient HUMAN gate auto-clears and emits `GATE_AUTO_RECONCILED`.
 - If ChatGPT is already generating, Ghost automatically presses its own Play control after clearing so v0.15.6 active-turn adoption takes over without sending another message.
 - A genuine assistant `[[GITL::HUMAN]]` or model relay marker still overrides this mechanism and remains operator-gated.
+
+
+## v0.15.9 connection-interrupted recovery
+
+- ChatGPT UI text such as `Kết nối bị gián đoạn. Đang chờ câu trả lời hoàn chỉnh` / `Connection interrupted. Waiting for a complete response` is classified as `CONNECTION_INTERRUPTED`, not generic uncertain/HUMAN.
+- Detection includes status/live regions plus a throttled paused-only page-text fallback for the exact interruption banner.
+- `CONNECTION_INTERRUPTED` is recoverable. Ghost waits 30 seconds first to give ChatGPT's own reconnect path priority.
+- If the interruption persists, ChatGPT is not generating, and no operator gate/user draft blocks recovery, Ghost sends one reconciliation/status probe.
+- If that recovery send itself is explicitly proven failed while the same interruption remains, Ghost gets one controlled retry. A second explicit failure stays recoverable and does not create HUMAN.
+- A verified failed recovery clears only Ghost's own staged recovery draft so it cannot block later recovery after connectivity returns.
+- HUMAN remains reserved for mixed/uncertain evidence, real assistant HUMAN markers, authentication failures, and other genuine operator decisions.

@@ -23,7 +23,7 @@ assert.match(manager,/h\.abort\(\)/);
 assert.match(manager,/Object\.defineProperty\(p\.obj,p\.key,p\.desc\)/);
 assert.match(manager,/ghostplusLastDiagnostics/);
 assert.match(manager,/allZero:Object\.values\(totals\)\.every/);
-assert.match(loader,/ghostplus\.15\.9/);
+assert.match(loader,/ghostplus\.15\.10/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);
@@ -108,3 +108,13 @@ assert.match(webRecovery,/return 'CONNECTION_INTERRUPTED'/,'CONNECTION_INTERRUPT
 assert.match(webRecovery,/interruptionSettleMs:\s*30000/,'connection interruption reconnect grace regressed');
 assert.match(webRecovery,/\['SEND_TIMEOUT','CONNECTION_INTERRUPTED','NETWORK_ERROR','GENERATION_ERROR'\]/,'CONNECTION_INTERRUPTED must remain recoverable');
 assert.match(webRecovery,/clearManagedRecoveryDraft\(snap\)/,'verified failed recovery must clear its own staged draft');
+
+assert.match(webRecovery,/const explicitWebError = !!error\.type/,'explicit web error detector flag missing');
+assert.match(webRecovery,/const active = pausedUncertain \|\| explicitWebError/,'explicit web error must not depend on Ghost PAUSED');
+assert.match(webRecovery,/đã detect nhưng ChatGPT vẫn đang generating; chỉ theo dõi, chưa recovery/,'visible error + generating must defer recovery');
+assert.doesNotMatch(watchdog,/data-testid\*="stop"/,'Watchdog must not use wildcard stop testids');
+assert.doesNotMatch(watchdog,/aria-label\*="stop"/,'Watchdog must not use wildcard global stop aria labels');
+assert.doesNotMatch(watchdog,/title\*="stop"/,'Watchdog must not use wildcard global stop titles');
+assert.match(watchdog,/button\[data-testid="stop-button"\]/,'Watchdog must align with core stop-button selector');
+assert.match(watchdog,/button\[aria-label="Stop generating"\]/,'Watchdog must align with core Stop generating selector');
+assert.match(watchdog,/button\[aria-label="Stop streaming"\]/,'Watchdog must align with core Stop streaming selector');

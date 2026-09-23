@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.9`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.10`.
 
 ## Added behavior
 
@@ -312,3 +312,13 @@ The manual diagnostic is `debug/ghost-scroll-diagnostic.user.js`. It is not incl
 - If that recovery send itself is explicitly proven failed while the same interruption remains, Ghost gets one controlled retry. A second explicit failure stays recoverable and does not create HUMAN.
 - A verified failed recovery clears only Ghost's own staged recovery draft so it cannot block later recovery after connectivity returns.
 - HUMAN remains reserved for mixed/uncertain evidence, real assistant HUMAN markers, authentication failures, and other genuine operator decisions.
+
+
+## v0.15.10 explicit web-error activation + BUSY detector alignment
+
+- A visible classified web error is now surfaced independently of Ghost core RUNNING/PAUSED state. This fixes cases where ChatGPT shows a SEND_TIMEOUT banner while Ghost still says RUNNING and the Web Recovery panel incorrectly says no error.
+- If a classified error is visible while ChatGPT still has genuine generation evidence, Web Recovery shows the error but does not act. Recovery begins only after generation evidence clears.
+- Smart Watchdog global Stop detection is aligned with the core ChatGPT profile: exact `stop-button`, `Stop generating`, and `Stop streaming` controls only.
+- Wildcard page-wide selectors such as `data-testid*=stop`, `aria-label*=stop`, and `title*=stop` are removed because they can match unrelated or stale controls and hold Watchdog BUSY indefinitely.
+- Localized/generic Stop detection remains available only around the composer through the existing composer-local candidate logic.
+- Ghost's own panel/watchdog controls are explicitly excluded from Stop detection.

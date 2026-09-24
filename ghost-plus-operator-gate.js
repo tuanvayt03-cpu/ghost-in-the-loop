@@ -86,7 +86,7 @@ function clearV01513FalseTriageGate(){
   if(!g||g.type!=='HUMAN_REQUIRED'||norm(g.reason)!==oldReason||g.source||g.transient)return false;
   const raw=latestRaw();
   if(!raw||!/\[GHOST TIMEOUT TRIAGE REPORT\]/i.test(raw))return false;
-  if(g.h&&hash(raw)!==g.h)return false;
+  if(!g.h||hash(raw)!==g.h)return false;
   const md='[*_`]*';
   const sm=raw.match(new RegExp('(?:^|\\n)\\s*'+md+'TRẠNG THÁI'+md+'\\s*:\\s*'+md+'(TIẾP_TỤC|TIẾP TỤC)'+md+'\\s*(?=\\n|$)','i'));
   const em=raw.match(new RegExp('(?:^|\\n)\\s*'+md+'SIDE EFFECT CHƯA XÁC MINH'+md+'\\s*:\\s*'+md+'(không)'+md+'\\s*(?=\\n|$)','i'));

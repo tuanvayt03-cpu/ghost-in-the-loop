@@ -32,6 +32,7 @@ const S = {
   verifiedFailureRetries: 0,
   lastInterruptScanAt: 0,
   lastInterruptText: '',
+  recoveryAttempt: null,
   lastFaultKey: String(GM_getValue(K.lastFaultKey, '') || ''),
   lastFaultAttemptAt: Number(GM_getValue(K.lastFaultAttemptAt, 0)) || 0
 };
@@ -211,12 +212,37 @@ function scanWebError() {
   }
   return { type: '', text: '', retryVisible: retryButtons().length > 0 };
 }
-function managedRecoveryDraft(value,snap){
-  const t=norm(value);
+function recoveryAttemptOwned(snap,attempt=S.recoveryAttempt){
+  if(!attempt||!snap)return false;
   const source=snap?.error?.type||'PLAY_SEND_UNCERTAIN';
-  return t.startsWith('[WEB RECOVERY STATUS PROBE]') && t.includes(`Recovery reason: ${source}.`);
+  return attempt.faultKey===snap.key &&
+    attempt.source===source &&
+    attempt.promptHash===hash(norm(attempt.prompt||'')) &&
+    now()-attempt.stagedAt<=Math.max(60000,CFG.sendVerifyMs*4);
 }
-function verifiedFailedSend(snap,{beforeUsers,beforeAssistants}={}){
+function beginRecoveryAttempt(prompt,snap,beforeUsers,beforeAssistants){
+  const attempt={
+    prompt:String(prompt||''),
+    promptHash:hash(norm(prompt||'')),
+    source:snap?.error?.type||'PLAY_SEND_UNCERTAIN',
+    faultKey:snap?.key||'',
+    stagedAt:now(),
+    beforeUsers,
+    beforeAssistants,
+    beforeAssistantHash:hash(latestText(assistants()))
+  };
+  S.recoveryAttempt=attempt;
+  return attempt;
+}
+function managedRecoveryDraft(value,snap,attempt=S.recoveryAttempt){
+  const t=norm(value);
+  if(!t)return false;
+  if(recoveryAttemptOwned(snap,attempt)&&hash(t)===attempt.promptHash)return true;
+  const source=snap?.error?.type||'PLAY_SEND_UNCERTAIN';
+  return t.startsWith('[WEB RECOVERY STATUS PROBE]') &&
+    (t.includes(`Lý do khôi phục: ${source}.`)||t.includes(`Recovery reason: ${source}.`));
+}
+function verifiedFailedSend(snap,{beforeUsers,beforeAssistants,attempt=S.recoveryAttempt}={}){
   const error=scanWebError();
   const draft=composerText();
   const explicitFailureType=['SEND_TIMEOUT','CONNECTION_INTERRUPTED'].includes(error.type)&&error.type===snap?.error?.type;
@@ -227,9 +253,10 @@ function verifiedFailedSend(snap,{beforeUsers,beforeAssistants}={}){
     notGenerating:!generating(),
     userCountStable:users().length===beforeUsers,
     assistantCountStable:assistants().length===beforeAssistants,
-    managedDraft:managedRecoveryDraft(draft,snap)
+    assistantTextStable:!attempt||hash(latestText(assistants()))===attempt.beforeAssistantHash,
+    ownedRecoveryAttempt:recoveryAttemptOwned(snap,attempt)
   };
-  return {verified:Object.values(evidence).every(Boolean),evidence,error,draft};
+  return {verified:Object.values(evidence).every(Boolean),evidence,error,draft,attempt};
 }
 function clearManagedRecoveryDraft(snap){
   const el=composer();
@@ -259,6 +286,7 @@ function explicitFailureExhausted(snap,verdict){
   markAttempt(snap);
   S.recovering=false;
   clearManagedRecoveryDraft(snap);
+  S.recoveryAttempt=null;
   const type=snap?.error?.type||verdict?.error?.type||'RECOVERY_SEND_FAILED';
   const msg=`${type} đã được xác nhận là recovery send FAILED; retry 1/1 cũng failed rõ ràng. Không nâng HUMAN và không resend thêm trong fault episode này.`;
   renderWebState(snap,msg);
@@ -430,20 +458,22 @@ async function sendRecoveryProbe(snap) {
 
   let beforeUsers = users().length;
   let beforeAssistants = assistants().length;
+  let attempt=beginRecoveryAttempt(prompt,snap,beforeUsers,beforeAssistants);
   if(!RT.alive()){S.recovering=false;return}
   try { gp.click(); } catch (e) {
+    S.recoveryAttempt=null;
     requireHuman(snap,'Không khởi động được Ghost recovery: '+String(e?.message||e));
     return;
   }
 
   let accepted = await wait(
-    () => generating() || users().length > beforeUsers || assistants().length > beforeAssistants || /^RUNNING\b/i.test(ghostStatus()),
+    () => generating() || users().length > beforeUsers || assistants().length > beforeAssistants,
     CFG.sendVerifyMs
   );
   if(!RT.alive()){S.recovering=false;return}
 
   if (!accepted) {
-    let verdict=verifiedFailedSend(snap,{beforeUsers,beforeAssistants});
+    let verdict=verifiedFailedSend(snap,{beforeUsers,beforeAssistants,attempt});
     if(verdict.verified && S.verifiedFailureRetries < CFG.verifiedFailureRetryMax){
       S.verifiedFailureRetries += 1;
       renderWebState(snap,`${snap.error.type||'RECOVERY_SEND_FAILED'} xác nhận recovery send FAILED · retry ${S.verifiedFailureRetries}/${CFG.verifiedFailureRetryMax}; không click request cũ.`);
@@ -458,9 +488,18 @@ async function sendRecoveryProbe(snap) {
       }
       await sleep(CFG.verifiedFailureRetryDelayMs);if(!RT.alive()){S.recovering=false;return}
       if(operatorLocked()){S.recovering=false;return}
-      if(!managedRecoveryDraft(composerText(),snap)){
-        requireHuman(snap,'Recovery draft đã thay đổi sau explicit failure; không retry vì outcome không còn chắc chắn.');
+      const currentDraft=composerText();
+      if(currentDraft&&!managedRecoveryDraft(currentDraft,snap,attempt)){
+        S.recovering=false;
+        renderWebState(snap,'Recovery send đã fail rõ nhưng ô nhập có draft khác; chờ ô nhập trống, không ghi đè và không nâng HUMAN.');
         return;
+      }
+      if(!currentDraft){
+        if(!await setComposerText(attempt.prompt)||!RT.alive()){
+          S.recovering=false;
+          renderWebState(snap,'Recovery send đã fail rõ; chưa restage được báo cáo trạng thái. Sẽ chờ vòng recovery tiếp theo, không nâng HUMAN.');
+          return;
+        }
       }
       const retryPlay=ghostPlay();
       if(!visible(retryPlay)){
@@ -469,17 +508,19 @@ async function sendRecoveryProbe(snap) {
       }
       beforeUsers=users().length;
       beforeAssistants=assistants().length;
+      attempt=beginRecoveryAttempt(attempt.prompt,snap,beforeUsers,beforeAssistants);
       try{retryPlay.click()}catch(e){
+        S.recoveryAttempt=null;
         requireHuman(snap,'Không khởi động được verified-failure retry: '+String(e?.message||e));
         return;
       }
       accepted=await wait(
-        () => generating() || users().length > beforeUsers || assistants().length > beforeAssistants || /^RUNNING\b/i.test(ghostStatus()),
+        () => generating() || users().length > beforeUsers || assistants().length > beforeAssistants,
         CFG.sendVerifyMs
       );
       if(!RT.alive()){S.recovering=false;return}
       if(!accepted){
-        verdict=verifiedFailedSend(snap,{beforeUsers,beforeAssistants});
+        verdict=verifiedFailedSend(snap,{beforeUsers,beforeAssistants,attempt});
         if(verdict.verified){
           explicitFailureExhausted(snap,verdict);
           return;
@@ -505,6 +546,7 @@ async function sendRecoveryProbe(snap) {
   }
 
   markAttempt(snap);
+  S.recoveryAttempt=null;
   const correction = String(GM_getValue(K.correction, '') || '').trim();
   if (correction) GM_setValue(K.correction, '');
   renderWebState(snap, 'Đã gửi status probe mới. Không click nút Thử lại của request cũ.');
@@ -526,7 +568,7 @@ function sample() {
   if (!snap.active) {
     if (!S.clearSince) S.clearSince = now();
     if (now() - S.clearSince >= CFG.clearStableMs) {
-      S.faultKey = ''; S.faultSeenAt = 0; S.attemptedThisEpisode = false; S.verifiedFailureRetries = 0;
+      S.faultKey = ''; S.faultSeenAt = 0; S.attemptedThisEpisode = false; S.verifiedFailureRetries = 0; S.recoveryAttempt=null;
     }
     return;
   }
@@ -537,6 +579,7 @@ function sample() {
     S.faultSeenAt = now();
     S.attemptedThisEpisode = false;
     S.verifiedFailureRetries = 0;
+    S.recoveryAttempt=null;
   }
 
   if (snap.blockedType) {

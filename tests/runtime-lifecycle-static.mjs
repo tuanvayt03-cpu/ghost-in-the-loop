@@ -23,7 +23,7 @@ assert.match(manager,/h\.abort\(\)/);
 assert.match(manager,/Object\.defineProperty\(p\.obj,p\.key,p\.desc\)/);
 assert.match(manager,/ghostplusLastDiagnostics/);
 assert.match(manager,/allZero:Object\.values\(totals\)\.every/);
-assert.match(loader,/ghostplus\.15\.12/);
+assert.match(loader,/ghostplus\.15\.13/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);
@@ -83,7 +83,7 @@ assert.ok(playBody.indexOf('if (generating()) {') < playBody.indexOf('} else if 
 const webRecovery=read('ghost-plus-web-recovery.js');
 assert.match(webRecovery,/verifiedFailureRetryMax:\s*1/,'verified SEND_TIMEOUT retry budget regressed');
 assert.match(webRecovery,/\['SEND_TIMEOUT','CONNECTION_INTERRUPTED'\]\.includes\(error\.type\)/,'explicit recoverable failure classification regressed');
-assert.match(webRecovery,/const retryEvidence=error\.type==='SEND_TIMEOUT'\?error\.retryVisible===true:true/,'SEND_TIMEOUT Retry evidence or connection-interrupted exception missing');
+assert.match(webRecovery,/retryVisible:error\.retryVisible===true/,'Retry button must remain corroborating evidence');
 assert.match(webRecovery,/userCountStable:users\(\)\.length===beforeUsers/,'user-count evidence missing');
 assert.match(webRecovery,/assistantCountStable:assistants\(\)\.length===beforeAssistants/,'assistant-count evidence missing');
 assert.match(webRecovery,/ownedRecoveryAttempt:recoveryAttemptOwned\(snap,attempt\)/,'owned recovery-attempt evidence missing');
@@ -146,3 +146,10 @@ assert.doesNotMatch(webRecovery,/\^RUNNING\\b\/i\.test\(ghostStatus\(\)\)/,'Ghos
 assert.match(webRecovery,/await setComposerText\(attempt\.prompt\)/,'verified failed retry must restage cleared report');
 assert.match(webRecovery,/Lý do khôi phục: \$\{source\}\./,'managed recovery draft must recognize current Vietnamese prompt');
 assert.match(webRecovery,/chờ ô nhập trống, không ghi đè và không nâng HUMAN/,'unrelated user draft must block retry without false HUMAN');
+
+assert.match(webRecovery,/const explicitFailureType=\['SEND_TIMEOUT','CONNECTION_INTERRUPTED'\]\.includes\(error\.type\);/,'explicit send failure must survive fault-type transition');
+assert.doesNotMatch(webRecovery,/retryEvidence:/,'retry button must not be required for verified send failure');
+assert.match(webRecovery,/corroborating=\{/,'corroborating failure diagnostics missing');
+assert.match(timeoutCore,/const plain=src\.replace\(\/\[\*_\\`\]\/g,''\)/,'timeout triage parser must tolerate markdown formatting');
+assert.match(timeoutCore,/triageIncomplete:true/,'incomplete timeout triage must not auto-continue');
+assert.match(timeoutCore,/Báo cáo timeout thiếu trường bắt buộc; không tự tiếp tục/,'incomplete timeout triage reason missing');

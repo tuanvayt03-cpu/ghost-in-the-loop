@@ -183,14 +183,31 @@ function finalLine(text) {
   const lines = String(text || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
   return lines.length ? lines[lines.length - 1] : '';
 }
-function terminal(text) {
-  const line = finalLine(text);
+function timeoutTriage(text) {
+  const src=String(text||'');
+  if(!/\[GHOST TIMEOUT TRIAGE REPORT\]/i.test(src))return null;
+  const sm=src.match(/(?:^|\n)\s*TRẠNG THÁI\s*:\s*(TIẾP_TỤC|TIẾP TỤC|CẦN_NGƯỜI|CẦN NGƯỜI|ĐÃ_XONG|ĐÃ XONG|KHÔNG_CHẮC|KHÔNG CHẮC)\s*(?=\n|$)/i);
+  const em=src.match(/(?:^|\n)\s*SIDE EFFECT CHƯA XÁC MINH\s*:\s*(có|không)\s*(?=\n|$)/i);
+  const rawStatus=semanticText(sm?.[1]||'').toUpperCase().replace(/\s+/g,'_');
+  const status=rawStatus==='TIẾP_TỤC'?'continue':rawStatus==='CẦN_NGƯỜI'?'human':rawStatus==='ĐÃ_XONG'?'complete':rawStatus==='KHÔNG_CHẮC'?'uncertain':'';
+  return {status,sideEffectUnverified:semanticText(em?.[1]||'').toLowerCase()==='có',complete:!!status&&!!em};
+}
+function explicitTerminal(line) {
   if (line === G.proceed || line === A.proceed) return { type: 'proceed', raw: line };
   if (line === G.human || line === A.human) return { type: 'human', raw: line };
   if (line === G.halt || line === A.halt) return { type: 'halt', raw: line };
   const relay = line.match(/^\[\[AOA::RELAY:([^\]\r\n]{1,80})\]\]$/);
   if (relay) return { type: 'relay', raw: line, model: relay[1].trim() };
   return { type: 'bad', raw: line || '(empty)' };
+}
+function terminal(text) {
+  const line=finalLine(text), explicit=explicitTerminal(line), triage=timeoutTriage(text);
+  if(!triage)return explicit;
+  if(!triage.complete)return explicit.type==='bad'?{type:'bad',raw:line||'(incomplete timeout triage)',triage}:explicit;
+  const expected=(triage.sideEffectUnverified||triage.status==='human'||triage.status==='uncertain')
+    ?'human':triage.status==='complete'?'halt':'proceed';
+  if(explicit.type!=='bad'&&explicit.type!==expected)return {type:'human',raw:line,triage,triageMismatch:true};
+  return {type:expected,raw:line||'(timeout triage)',triage,triageDerived:explicit.type==='bad'};
 }
 function log(type, data = {}) {
   S.events.push({ at: new Date().toISOString(), type, data });
@@ -382,6 +399,7 @@ async function handleTerminal(text, parsed) {
   const fp = hash(text);
   if (!text || fp === S.lastHandled || S.mode !== 'RUNNING' || S.sending) return;
   S.lastHandled = fp;
+  if(parsed.triage)log('timeout-triage',{status:parsed.triage.status,sideEffectUnverified:parsed.triage.sideEffectUnverified,mismatch:!!parsed.triageMismatch,derived:!!parsed.triageDerived});
   if (parsed.type === 'halt') {
     S.drift = 0; clearContinuity(); complete('Task complete');
     structured('COMPLETE','info','complete','Ghost complete','The AI returned HALT.',{id:`core-halt:${fp}`});
@@ -389,10 +407,17 @@ async function handleTerminal(text, parsed) {
   }
   if (parsed.type === 'human') {
     S.drift = 0; clearContinuity();
+    const triageReason=parsed.triageMismatch
+      ?'Báo cáo timeout mâu thuẫn với terminal marker; cần người kiểm tra.'
+      :parsed.triage?.sideEffectUnverified||parsed.triage?.status==='uncertain'
+        ?'Báo cáo timeout cho biết còn trạng thái/tác vụ chưa xác minh; cần người kiểm tra trước khi tiếp tục.'
+        :parsed.triage?.status==='human'
+          ?'Báo cáo timeout xác định thật sự cần người quyết định hoặc cung cấp thông tin.'
+          :'The AI requested a human decision.';
     try {
-      if(window.__ghostPlusSupervisor?.lock) window.__ghostPlusSupervisor.lock('HUMAN_REQUIRED',{h:fp,reason:'The AI requested a human decision.'});
-      else { pause('Human decision requested by the AI.'); notify('Ghost paused','The AI requested a human decision.'); }
-    } catch (_) { pause('Human decision requested by the AI.'); notify('Ghost paused','The AI requested a human decision.'); }
+      if(window.__ghostPlusSupervisor?.lock) window.__ghostPlusSupervisor.lock('HUMAN_REQUIRED',{h:fp,reason:triageReason});
+      else { pause(triageReason); notify('Ghost paused',triageReason); }
+    } catch (_) { pause(triageReason); notify('Ghost paused',triageReason); }
     return;
   }
   if (parsed.type === 'relay') {
@@ -404,8 +429,10 @@ async function handleTerminal(text, parsed) {
     return;
   }
   if (parsed.type === 'proceed') {
-    S.drift = 0; if (S.round >= S.max) { humanBlock('Round safety limit reached. Increase/reset the round limit or review the job before continuing.'); return; }
-    await sendOnce(continuationPrompt(), 'continue');
+    S.drift = 0;
+    if(parsed.triage)structured('TIMEOUT_TRIAGE_CONTINUE','info','recovery','Ghost timeout triage','Báo cáo timeout xác định có thể tiếp tục an toàn từ checkpoint.',{id:`triage-proceed:${fp}`});
+    if (S.round >= S.max) { humanBlock('Round safety limit reached. Increase/reset the round limit or review the job before continuing.'); return; }
+    await sendOnce(continuationPrompt(), parsed.triage?'continue after timeout triage':'continue');
   }
 }
 async function handleDrift(tail) {

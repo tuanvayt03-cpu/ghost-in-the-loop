@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.14`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.15`.
 
 ## Added behavior
 
@@ -364,3 +364,10 @@ The manual diagnostic is `debug/ghost-scroll-diagnostic.user.js`. It is not incl
 - Parser mới cho phép wrapper Markdown quanh nhãn/giá trị nhưng giữ nguyên underscore bên trong enum `TIẾP_TỤC`, `CẦN_NGƯỜI`, `ĐÃ_XONG`, `KHÔNG_CHẮC`.
 - Thêm migration cực hẹp cho false HUMAN gate do chính bug v0.15.13 tạo: chỉ tự clear khi reason đúng lỗi cũ, assistant hash đúng report hiện tại, report là `TIẾP_TỤC`, side effect chưa xác minh = `không`, và terminal cuối là PROCEED.
 - Sau khi clear false gate, Ghost tự Play lại nếu không BUSY và composer trống. HUMAN thật không bị ảnh hưởng.
+
+
+## v0.15.15 false-gate hash hardening
+
+- The v0.15.13 false-HUMAN migration now requires the persisted assistant hash to exist and exactly match the current timeout triage report before it can clear anything.
+- A matching reason without a hash is fail-closed and remains HUMAN; this keeps the migration limited to gates actually created by the v0.15.13 parser regression path.
+- Safe `TIẾP_TỤC` + `SIDE EFFECT CHƯA XÁC MINH: không` + final `PROCEED` is still required; real HUMAN gates are unaffected.

@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.11`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.12`.
 
 ## Added behavior
 
@@ -335,3 +335,15 @@ The manual diagnostic is `debug/ghost-scroll-diagnostic.user.js`. It is not incl
 - Nếu report và terminal marker mâu thuẫn, Ghost chọn HUMAN thay vì đoán.
 - Draft của người dùng trong ô nhập chỉ làm recovery chờ; Ghost không ghi đè và không nâng HUMAN.
 - Gate HUMAN cũ sinh bởi lỗi composer-draft trước đây được tự dọn bằng migration khớp đúng reason cũ; assistant HUMAN thật không bị ảnh hưởng.
+
+
+## v0.15.12 timeout send evidence
+
+- Sửa lỗi xác minh report timeout phụ thuộc vào nội dung còn nằm trong composer.
+- Trước khi bấm gửi report, Web Recovery lưu ownership/fingerprint của chính report: source fault, fault key, prompt hash, thời điểm stage, số user/assistant turn và hash assistant hiện tại.
+- Khi ChatGPT hiện SEND_TIMEOUT/CONNECTION_INTERRUPTED, report được coi là gửi thất bại rõ nếu: lỗi explicit vẫn hiện, ChatGPT không generating, turn counts không tăng, assistant text không đổi và recovery attempt là report do Ghost vừa stage.
+- Composer có thể bị ChatGPT xóa ngay sau khi bấm gửi; việc đó không còn làm evidence mất hiệu lực.
+- `Ghost RUNNING` không còn được tính là bằng chứng request đã được ChatGPT nhận. Chỉ generation thật hoặc turn mới của ChatGPT mới xác nhận send accepted.
+- Nếu report thất bại rõ và composer đã trống, retry duy nhất sẽ restage đúng report đã lưu rồi gửi lại.
+- Nếu người dùng đã nhập draft khác, Ghost chờ ô nhập trống, không ghi đè và không nâng HUMAN.
+- Đồng thời sửa mismatch của v0.15.11: prompt hiện dùng `Lý do khôi phục`, còn detector cũ vẫn tìm `Recovery reason`.

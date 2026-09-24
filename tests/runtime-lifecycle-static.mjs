@@ -23,7 +23,7 @@ assert.match(manager,/h\.abort\(\)/);
 assert.match(manager,/Object\.defineProperty\(p\.obj,p\.key,p\.desc\)/);
 assert.match(manager,/ghostplusLastDiagnostics/);
 assert.match(manager,/allZero:Object\.values\(totals\)\.every/);
-assert.match(loader,/ghostplus\.15\.11/);
+assert.match(loader,/ghostplus\.15\.12/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);
@@ -86,7 +86,7 @@ assert.match(webRecovery,/\['SEND_TIMEOUT','CONNECTION_INTERRUPTED'\]\.includes\
 assert.match(webRecovery,/const retryEvidence=error\.type==='SEND_TIMEOUT'\?error\.retryVisible===true:true/,'SEND_TIMEOUT Retry evidence or connection-interrupted exception missing');
 assert.match(webRecovery,/userCountStable:users\(\)\.length===beforeUsers/,'user-count evidence missing');
 assert.match(webRecovery,/assistantCountStable:assistants\(\)\.length===beforeAssistants/,'assistant-count evidence missing');
-assert.match(webRecovery,/managedDraft:managedRecoveryDraft\(draft,snap\)/,'managed recovery draft evidence missing');
+assert.match(webRecovery,/ownedRecoveryAttempt:recoveryAttemptOwned\(snap,attempt\)/,'owned recovery-attempt evidence missing');
 assert.match(webRecovery,/S\.verifiedFailureRetries < CFG\.verifiedFailureRetryMax/,'controlled retry path missing');
 assert.match(webRecovery,/Không nâng HUMAN và không resend thêm/,'verified failed send must not escalate to HUMAN');
 assert.match(webRecovery,/Outcome thật sự uncertain; cần kiểm tra thủ công\./,'uncertain evidence must still escalate to HUMAN');
@@ -134,3 +134,15 @@ assert.match(timeoutCore,/continue after timeout triage/,'safe triage continuati
 assert.match(timeoutCore,/TIMEOUT_TRIAGE_CONTINUE/,'timeout triage continue event missing');
 assert.match(timeoutGate,/function clearLegacyOperationalGate\(\)/,'legacy composer-draft gate migration missing');
 assert.match(timeoutGate,/legacy-composer-draft-gate/,'legacy composer-draft gate migration reason missing');
+
+assert.match(webRecovery,/function recoveryAttemptOwned\(snap,attempt=S\.recoveryAttempt\)/,'recovery attempt ownership helper missing');
+assert.match(webRecovery,/function beginRecoveryAttempt\(prompt,snap,beforeUsers,beforeAssistants\)/,'recovery attempt fingerprint helper missing');
+assert.match(webRecovery,/promptHash:hash\(norm\(prompt\|\|''\)\)/,'staged recovery prompt hash missing');
+assert.match(webRecovery,/beforeAssistantHash:hash\(latestText\(assistants\(\)\)\)/,'assistant baseline hash missing');
+assert.match(webRecovery,/assistantTextStable:/,'assistant text stability evidence missing');
+assert.match(webRecovery,/ownedRecoveryAttempt:recoveryAttemptOwned\(snap,attempt\)/,'staged recovery ownership must survive composer clearing');
+assert.doesNotMatch(webRecovery,/managedDraft:managedRecoveryDraft\(draft,snap\)/,'composer presence must not be required to verify failed send');
+assert.doesNotMatch(webRecovery,/\^RUNNING\\b\/i\.test\(ghostStatus\(\)\)/,'Ghost RUNNING must not count as ChatGPT send acceptance');
+assert.match(webRecovery,/await setComposerText\(attempt\.prompt\)/,'verified failed retry must restage cleared report');
+assert.match(webRecovery,/Lý do khôi phục: \$\{source\}\./,'managed recovery draft must recognize current Vietnamese prompt');
+assert.match(webRecovery,/chờ ô nhập trống, không ghi đè và không nâng HUMAN/,'unrelated user draft must block retry without false HUMAN');

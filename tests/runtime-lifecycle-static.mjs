@@ -23,7 +23,7 @@ assert.match(manager,/h\.abort\(\)/);
 assert.match(manager,/Object\.defineProperty\(p\.obj,p\.key,p\.desc\)/);
 assert.match(manager,/ghostplusLastDiagnostics/);
 assert.match(manager,/allZero:Object\.values\(totals\)\.every/);
-assert.match(loader,/ghostplus\.15\.13/);
+assert.match(loader,/ghostplus\.15\.14/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);
@@ -150,6 +150,13 @@ assert.match(webRecovery,/chờ ô nhập trống, không ghi đè và không n�
 assert.match(webRecovery,/const explicitFailureType=\['SEND_TIMEOUT','CONNECTION_INTERRUPTED'\]\.includes\(error\.type\);/,'explicit send failure must survive fault-type transition');
 assert.doesNotMatch(webRecovery,/retryEvidence:/,'retry button must not be required for verified send failure');
 assert.match(webRecovery,/corroborating=\{/,'corroborating failure diagnostics missing');
-assert.match(timeoutCore,/const plain=src\.replace\(\/\[\*_\\`\]\/g,''\)/,'timeout triage parser must tolerate markdown formatting');
+assert.doesNotMatch(timeoutCore,/src\.replace\(\/\[\*_\\`\]\/g,''\)/,'timeout triage parser must never strip enum underscores globally');
+assert.match(timeoutCore,/const md='\[\*_\\`\]\*';/,'timeout triage markdown wrapper matcher missing');
 assert.match(timeoutCore,/triageIncomplete:true/,'incomplete timeout triage must not auto-continue');
 assert.match(timeoutCore,/Báo cáo timeout thiếu trường bắt buộc; không tự tiếp tục/,'incomplete timeout triage reason missing');
+
+assert.match(timeoutGate,/function latestRaw\(\)/,'raw assistant text helper missing for triage migration');
+assert.match(timeoutGate,/function clearV01513FalseTriageGate\(\)/,'v0.15.13 false triage gate migration missing');
+assert.match(timeoutGate,/v0\.15\.13-underscore-parser/,'false triage gate migration provenance missing');
+assert.match(timeoutGate,/if\(g\.h&&hash\(raw\)!==g\.h\)return false/,'false triage gate migration must verify exact assistant hash');
+assert.match(timeoutGate,/if\(!sm\|\|!em\|\|ty!=='proceed'\)return false/,'false triage gate migration must require safe PROCEED report');

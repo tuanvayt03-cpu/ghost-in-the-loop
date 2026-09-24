@@ -186,8 +186,9 @@ function finalLine(text) {
 function timeoutTriage(text) {
   const src=String(text||'');
   if(!/\[GHOST TIMEOUT TRIAGE REPORT\]/i.test(src))return null;
-  const sm=src.match(/(?:^|\n)\s*TRẠNG THÁI\s*:\s*(TIẾP_TỤC|TIẾP TỤC|CẦN_NGƯỜI|CẦN NGƯỜI|ĐÃ_XONG|ĐÃ XONG|KHÔNG_CHẮC|KHÔNG CHẮC)\s*(?=\n|$)/i);
-  const em=src.match(/(?:^|\n)\s*SIDE EFFECT CHƯA XÁC MINH\s*:\s*(có|không)\s*(?=\n|$)/i);
+  const plain=src.replace(/[*_`]/g,'');
+  const sm=plain.match(/(?:^|\n)\s*TRẠNG THÁI\s*:\s*(TIẾP_TỤC|TIẾP TỤC|CẦN_NGƯỜI|CẦN NGƯỜI|ĐÃ_XONG|ĐÃ XONG|KHÔNG_CHẮC|KHÔNG CHẮC)\s*(?=\n|$)/i);
+  const em=plain.match(/(?:^|\n)\s*SIDE EFFECT CHƯA XÁC MINH\s*:\s*(có|không)\s*(?=\n|$)/i);
   const rawStatus=semanticText(sm?.[1]||'').toUpperCase().replace(/\s+/g,'_');
   const status=rawStatus==='TIẾP_TỤC'?'continue':rawStatus==='CẦN_NGƯỜI'?'human':rawStatus==='ĐÃ_XONG'?'complete':rawStatus==='KHÔNG_CHẮC'?'uncertain':'';
   return {status,sideEffectUnverified:semanticText(em?.[1]||'').toLowerCase()==='có',complete:!!status&&!!em};
@@ -203,7 +204,7 @@ function explicitTerminal(line) {
 function terminal(text) {
   const line=finalLine(text), explicit=explicitTerminal(line), triage=timeoutTriage(text);
   if(!triage)return explicit;
-  if(!triage.complete)return explicit.type==='bad'?{type:'bad',raw:line||'(incomplete timeout triage)',triage}:explicit;
+  if(!triage.complete)return {type:'human',raw:line||'(incomplete timeout triage)',triage,triageIncomplete:true};
   const expected=(triage.sideEffectUnverified||triage.status==='human'||triage.status==='uncertain')
     ?'human':triage.status==='complete'?'halt':'proceed';
   if(explicit.type!=='bad'&&explicit.type!==expected)return {type:'human',raw:line,triage,triageMismatch:true};
@@ -407,8 +408,10 @@ async function handleTerminal(text, parsed) {
   }
   if (parsed.type === 'human') {
     S.drift = 0; clearContinuity();
-    const triageReason=parsed.triageMismatch
-      ?'Báo cáo timeout mâu thuẫn với terminal marker; cần người kiểm tra.'
+    const triageReason=parsed.triageIncomplete
+      ?'Báo cáo timeout thiếu trường bắt buộc; không tự tiếp tục khi chưa phân loại được trạng thái.'
+      :parsed.triageMismatch
+        ?'Báo cáo timeout mâu thuẫn với terminal marker; cần người kiểm tra.'
       :parsed.triage?.sideEffectUnverified||parsed.triage?.status==='uncertain'
         ?'Báo cáo timeout cho biết còn trạng thái/tác vụ chưa xác minh; cần người kiểm tra trước khi tiếp tục.'
         :parsed.triage?.status==='human'

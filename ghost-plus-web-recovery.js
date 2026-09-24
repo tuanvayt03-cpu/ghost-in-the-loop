@@ -315,21 +315,26 @@ function recoveryPrompt(snap) {
   const source = snap.error.type || 'PLAY_SEND_UNCERTAIN';
   const lines = [
     '[WEB RECOVERY STATUS PROBE]',
-    `Recovery reason: ${source}.`,
-    'The previous ChatGPT Web send/turn path stopped or failed without a trustworthy terminal result.',
-    'Reconcile the current state before taking any new side effect.',
-    'Inspect the current conversation plus fresh machine/tool state and the latest verified checkpoint/evidence.',
-    'Classify the situation internally as RESUMABLE, BLOCKED, COMPLETE, or UNKNOWN_SIDE_EFFECT.',
-    'If RESUMABLE: continue the existing task now from the latest verified checkpoint without repeating completed work.',
-    'If BLOCKED: explain the genuine blocker and request human input.',
-    'If COMPLETE: preserve the completed result and finish.',
-    'If UNKNOWN_SIDE_EFFECT: do NOT replay, resend, or retry that side effect. Reconcile evidence first; if certainty cannot be restored, request human input.',
-    'Do not click/retry the previous failed web request conceptually. Treat this as a fresh reconciliation turn.',
-    'Do not weaken tests, do not blind retry, and do not restart completed work.',
-    'Keep the active Ghost control protocol in force and end with exactly one valid Ghost terminal control line.'
+    `Lý do khôi phục: ${source}.`,
+    'Lượt ChatGPT Web trước đã dừng/lỗi mà chưa có kết quả terminal đáng tin cậy.',
+    'Lượt này CHỈ kiểm tra trạng thái và lập báo cáo; chưa tiếp tục công việc.',
+    'Đối chiếu hội thoại hiện tại, checkpoint/bằng chứng gần nhất và trạng thái công cụ mới nhất. Chỉ kiểm tra đọc; không thực hiện thao tác ghi mới.',
+    '[GHOST TIMEOUT TRIAGE REPORT]',
+    'TRẠNG THÁI: TIẾP_TỤC | CẦN_NGƯỜI | ĐÃ_XONG | KHÔNG_CHẮC',
+    'CHECKPOINT: <điểm chắc chắn gần nhất>',
+    'ĐÃ HOÀN THÀNH: <tóm tắt ngắn>',
+    'CÒN LẠI: <tóm tắt ngắn>',
+    'BLOCKER: <không hoặc mô tả>',
+    'SIDE EFFECT CHƯA XÁC MINH: có | không',
+    'TIẾP_TỤC chỉ khi có thể tiếp tục an toàn từ checkpoint và SIDE EFFECT CHƯA XÁC MINH = không.',
+    'CẦN_NGƯỜI chỉ khi thật sự cần người quyết định/cung cấp thông tin.',
+    'ĐÃ_XONG khi công việc đã hoàn tất.',
+    'KHÔNG_CHẮC khi còn trạng thái/tác vụ chưa xác minh; không làm lại tác vụ đó.',
+    'Dòng cuối: TIẾP_TỤC -> [[GITL::PROCEED]], CẦN_NGƯỜI -> [[GITL::HUMAN]], ĐÃ_XONG -> [[GITL::HALT]], KHÔNG_CHẮC hoặc SIDE EFFECT CHƯA XÁC MINH = có -> [[GITL::HUMAN]].',
+    'Nếu protocol hiện tại dùng AOA thì dùng marker AOA tương đương. Terminal marker chỉ được nằm ở dòng cuối.'
   ];
   const correction = String(GM_getValue(K.correction, '') || '').trim();
-  if (correction) lines.splice(4, 0, '[OPERATOR CORRECTION QUEUED]', correction, 'Apply this correction before the next safe action.');
+  if (correction) lines.splice(5, 0, '[YÊU CẦU ƯU TIÊN CỦA OPERATOR]', correction, 'Chỉ dùng yêu cầu này để đánh giá trạng thái ở lượt báo cáo.');
   return lines.join('\n');
 }
 
@@ -397,7 +402,7 @@ async function sendRecoveryProbe(snap) {
     return;
   }
   if (composerText()) {
-    requireHuman(snap,'Ô nhập đang có nội dung. Ghost+ không ghi đè recovery probe; cần kiểm tra thủ công.');
+    renderWebState(snap,'Ô nhập đang có nội dung; chờ ô nhập trống để gửi báo cáo trạng thái. Không ghi đè và không nâng HUMAN.');
     return;
   }
   if (S.attemptedThisEpisode) return;

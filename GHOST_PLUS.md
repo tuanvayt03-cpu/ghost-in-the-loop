@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.10`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.11`.
 
 ## Added behavior
 
@@ -322,3 +322,16 @@ The manual diagnostic is `debug/ghost-scroll-diagnostic.user.js`. It is not incl
 - Wildcard page-wide selectors such as `data-testid*=stop`, `aria-label*=stop`, and `title*=stop` are removed because they can match unrelated or stale controls and hold Watchdog BUSY indefinitely.
 - Localized/generic Stop detection remains available only around the composer through the existing composer-local candidate logic.
 - Ghost's own panel/watchdog controls are explicitly excluded from Stop detection.
+
+
+## v0.15.11 timeout triage report
+
+- Khi gặp timeout/lỗi web có thể khôi phục, Ghost không yêu cầu model tiếp tục công việc ngay.
+- Ghost gửi đúng một lượt báo cáo trạng thái với header `[GHOST TIMEOUT TRIAGE REPORT]`.
+- Báo cáo phân loại `TRẠNG THÁI` thành `TIẾP_TỤC`, `CẦN_NGƯỜI`, `ĐÃ_XONG`, hoặc `KHÔNG_CHẮC`, đồng thời ghi rõ `SIDE EFFECT CHƯA XÁC MINH: có|không`.
+- `TIẾP_TỤC` + không có side effect chưa xác minh mới được map sang PROCEED; sau đó Ghost mới gửi continuation bình thường từ checkpoint.
+- `CẦN_NGƯỜI`, `KHÔNG_CHẮC`, hoặc side effect chưa xác minh = có sẽ map sang HUMAN.
+- `ĐÃ_XONG` map sang HALT.
+- Nếu report và terminal marker mâu thuẫn, Ghost chọn HUMAN thay vì đoán.
+- Draft của người dùng trong ô nhập chỉ làm recovery chờ; Ghost không ghi đè và không nâng HUMAN.
+- Gate HUMAN cũ sinh bởi lỗi composer-draft trước đây được tự dọn bằng migration khớp đúng reason cũ; assistant HUMAN thật không bị ảnh hưởng.

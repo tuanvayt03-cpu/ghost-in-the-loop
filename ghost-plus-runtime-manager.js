@@ -2,7 +2,7 @@
 'use strict';
 
 const ROOT='__ghostPlusRuntime';
-const VERSION='0.15.12';
+const VERSION='0.15.13';
 const previous=window[ROOT];
 try { if(previous?.active && typeof previous.destroy==='function') previous.destroy('reinject'); } catch (_) {}
 

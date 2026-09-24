@@ -245,18 +245,21 @@ function managedRecoveryDraft(value,snap,attempt=S.recoveryAttempt){
 function verifiedFailedSend(snap,{beforeUsers,beforeAssistants,attempt=S.recoveryAttempt}={}){
   const error=scanWebError();
   const draft=composerText();
-  const explicitFailureType=['SEND_TIMEOUT','CONNECTION_INTERRUPTED'].includes(error.type)&&error.type===snap?.error?.type;
-  const retryEvidence=error.type==='SEND_TIMEOUT'?error.retryVisible===true:true;
+  const explicitFailureType=['SEND_TIMEOUT','CONNECTION_INTERRUPTED'].includes(error.type);
   const evidence={
     explicitFailureType,
-    retryEvidence,
     notGenerating:!generating(),
     userCountStable:users().length===beforeUsers,
     assistantCountStable:assistants().length===beforeAssistants,
     assistantTextStable:!attempt||hash(latestText(assistants()))===attempt.beforeAssistantHash,
     ownedRecoveryAttempt:recoveryAttemptOwned(snap,attempt)
   };
-  return {verified:Object.values(evidence).every(Boolean),evidence,error,draft,attempt};
+  const corroborating={
+    retryVisible:error.retryVisible===true,
+    originalFaultType:snap?.error?.type||'',
+    observedFailureType:error.type||''
+  };
+  return {verified:Object.values(evidence).every(Boolean),evidence,corroborating,error,draft,attempt};
 }
 function clearManagedRecoveryDraft(snap){
   const el=composer();

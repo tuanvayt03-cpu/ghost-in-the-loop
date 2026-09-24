@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.12`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.13`.
 
 ## Added behavior
 
@@ -347,3 +347,12 @@ The manual diagnostic is `debug/ghost-scroll-diagnostic.user.js`. It is not incl
 - Nếu report thất bại rõ và composer đã trống, retry duy nhất sẽ restage đúng report đã lưu rồi gửi lại.
 - Nếu người dùng đã nhập draft khác, Ghost chờ ô nhập trống, không ghi đè và không nâng HUMAN.
 - Đồng thời sửa mismatch của v0.15.11: prompt hiện dùng `Lý do khôi phục`, còn detector cũ vẫn tìm `Recovery reason`.
+
+
+## v0.15.13 timeout edge hardening
+
+- Nút `Thử lại` chỉ còn là bằng chứng bổ sung, không còn là điều kiện bắt buộc để xác nhận recovery report gửi thất bại.
+- Nếu banner lỗi chuyển giữa `SEND_TIMEOUT` và `CONNECTION_INTERRUPTED` trong cùng recovery attempt, Ghost vẫn dùng turn counts/generation/assistant hash/attempt ownership để xác minh outcome thay vì nhảy HUMAN chỉ vì loại banner đổi.
+- Parser báo cáo timeout chấp nhận định dạng Markdown đơn giản như `**TRẠNG THÁI:**` và backtick/underscore.
+- Nếu report có header timeout nhưng thiếu trường bắt buộc, core không còn tin riêng terminal marker PROCEED/HALT; trạng thái đó được khóa HUMAN thay vì tự tiếp tục.
+- Mục tiêu là giữ nguyên nguyên tắc: network failure rõ ràng không tạo HUMAN giả, nhưng report không đủ thông tin cũng không được phép auto-continue.

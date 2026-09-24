@@ -59,7 +59,8 @@ function composer(){return q('#prompt-textarea')||q('textarea[data-id="root"]')}
 function ctext(el=composer()){return norm(el?.innerText??el?.textContent??el?.value??'')}
 function users(){return qa('[data-message-author-role="user"]').filter(x=>x.isConnected).length}
 function assistants(){return qa('[data-message-author-role="assistant"]').filter(x=>x.isConnected).length}
-function latest(){const a=qa('[data-message-author-role="assistant"]').filter(x=>x.isConnected);const e=a[a.length-1];return norm(e?.innerText||e?.textContent||'')}
+function latestRaw(){const a=qa('[data-message-author-role="assistant"]').filter(x=>x.isConnected);const e=a[a.length-1];return String(e?.innerText||e?.textContent||'').replace(/\u00a0/g,' ').replace(/\r/g,'').trim()}
+function latest(){return norm(latestRaw())}
 function modelBusy(){try{const watch=norm(q('#ghostplus-watch [data-state]')?.textContent||'');if(/ĐANG THỰC THI|BUSY/i.test(watch))return true;const sels=['button[data-testid="stop-button"]:not([data-ghostplus-sentinel])','button[aria-label="Stop generating"]:not([data-ghostplus-sentinel])','button[aria-label="Stop streaming"]:not([data-ghostplus-sentinel])'];return sels.some(sel=>qa(sel).some(x=>x.isConnected&&!!(x.offsetWidth||x.offsetHeight||x.getClientRects().length)))}catch(_){return false}}
 function term(t){const l=String(t||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean).pop()||'';if(/^(\[\[GITL::HUMAN\]\]|\[\[AOA::HUMAN\]\])$/.test(l))return['human',''];if(/^(\[\[GITL::HALT\]\]|\[\[AOA::HALT\]\])$/.test(l))return['halt',''];if(/^(\[\[GITL::PROCEED\]\]|\[\[AOA::CONTINUE\]\])$/.test(l))return['proceed',''];const m=l.match(/^\[\[AOA::RELAY:([^\]]{1,80})\]\]$/);return m?['relay',m[1].trim()]:['bad','']}
 function reason(t){const a=String(t||'').split(/\r?\n/);while(a.length&&/^\s*\[\[(GITL|AOA)::/.test(a[a.length-1]))a.pop();const s=norm(a.join('\n'));return s.length>320?`…${s.slice(-320)}`:s}
@@ -77,6 +78,28 @@ function clearLegacyOperationalGate(){
   clear(false);
   S.msg=`Đã tự dọn gate cũ ${id}: draft trong ô nhập là trạng thái vận hành, không phải HUMAN.`;
   emit({id:`legacy-gate-cleared:${id}`,type:'LEGACY_OPERATIONAL_GATE_CLEARED',severity:'info',group:'operator',title:'Ghost+ cleared legacy operational gate',text:id,episodeId:id,reason:'legacy-composer-draft-gate',source:'gate',desktop:false});
+  return true;
+}
+function clearV01513FalseTriageGate(){
+  const g=S.gate||gate();
+  const oldReason='Báo cáo timeout thiếu trường bắt buộc; không tự tiếp tục khi chưa phân loại được trạng thái.';
+  if(!g||g.type!=='HUMAN_REQUIRED'||norm(g.reason)!==oldReason||g.source||g.transient)return false;
+  const raw=latestRaw();
+  if(!raw||!/\[GHOST TIMEOUT TRIAGE REPORT\]/i.test(raw))return false;
+  if(g.h&&hash(raw)!==g.h)return false;
+  const md='[*_`]*';
+  const sm=raw.match(new RegExp('(?:^|\\n)\\s*'+md+'TRẠNG THÁI'+md+'\\s*:\\s*'+md+'(TIẾP_TỤC|TIẾP TỤC)'+md+'\\s*(?=\\n|$)','i'));
+  const em=raw.match(new RegExp('(?:^|\\n)\\s*'+md+'SIDE EFFECT CHƯA XÁC MINH'+md+'\\s*:\\s*'+md+'(không)'+md+'\\s*(?=\\n|$)','i'));
+  const [ty]=term(raw);
+  if(!sm||!em||ty!=='proceed')return false;
+  const id=g.id;
+  clear(false);
+  S.msg=`Đã tự dọn false HUMAN gate 15.13 ${id}; report timeout xác nhận TIẾP_TỤC an toàn.`;
+  emit({id:`triage-gate-cleared:${id}`,type:'FALSE_TRIAGE_GATE_CLEARED',severity:'info',group:'operator',title:'Ghost+ cleared v0.15.13 false triage gate',text:id,episodeId:id,reason:'v0.15.13-underscore-parser',source:'gate',desktop:false});
+  RT.timeout(()=>{
+    if(!RT.alive()||gate()||modelBusy()||ctext())return;
+    try{play()?.click()}catch(_){}
+  },0);
   return true;
 }
 function autoReconcileTransientGate(){
@@ -109,7 +132,7 @@ function render(){const r=ui(),g=S.gate||gate();if(!r)return;if(!g){r.style.disp
 function enforce(){const g=S.gate||gate();if(!g)return;S.gate=g;document.documentElement.setAttribute('data-ghostplus-gate',g.type);const st=q('#gitl9 .status');if(st)st.innerHTML=`<b>PAUSED</b> · ${g.type}<br>${g.id}`;const m=q('#ghostplus-mini'),gm=meta(g.type);if(m){m.textContent='⚠';m.title=`${g.type} · ${g.id}`}const base=document.title.replace(/^[🔴🟠]\s+(HUMAN|RELAY|CONTEXT|AUTH|RECOVERY|BLOCKED)\s+·\s+/,'');document.title=`${gm.icon} ${gm.short} · ${base}`;render();guardDraft()}
 function guardDraft(){if(!S.gate)return;const e=composer(),t=ctext(e);if(!/^\[(WEB|WATCHDOG) RECOVERY STATUS PROBE\]/i.test(t))return;try{if(e.isContentEditable){e.textContent='';e.dispatchEvent(new Event('input',{bubbles:true}))}else{e.value='';e.dispatchEvent(new Event('input',{bubbles:true}))}S.msg='Đã chặn recovery probe trong lúc gate khóa.';render()}catch(_){}}
 async function resume(){if(S.busy)return;const g=S.gate||gate();if(!g)return;if(ctext()){S.msg='Ô nhập đang có draft. Hãy gửi/xóa draft trước khi Resume.';render();return}S.busy=true;const note=norm(q('#ghostplus-gate [data-note]')?.value||''),p=['[OPERATOR GATE RESOLVED]','A human explicitly authorized continuation.',note?`Operator response: ${note}`:'Continue from the exact paused checkpoint.','Do not restart or repeat completed work. Reconcile uncertain prior side effects before new ones.','Keep the Ghost protocol and end with exactly one valid terminal control line.'].join('\n');stop();await sleep(100);if(!RT.alive()){S.busy=false;return}if(!setComposer(p)){S.busy=false;S.msg='Không stage được resume prompt; gate vẫn khóa.';render();return}if(g.type==='RECOVERY_EXHAUSTED'){try{window.__ghostPlusWatchdog?.resetRecoveryEpisode?.()}catch(_){}}if(g.h)saveAck(key(),g.h);save(key(),null);S.gate=null;document.documentElement.removeAttribute('data-ghostplus-gate');document.title=document.title.replace(/^[🔴🟠]\s+(HUMAN|RELAY|CONTEXT|AUTH|RECOVERY|BLOCKED)\s+·\s+/,'');const b=play(),before=users();try{b?.click()}catch(_){}const start=now();let ok=false;while(now()-start<4000){if(/^RUNNING\b/i.test(status())||users()>before){ok=true;break}await sleep(200);if(!RT.alive()){S.busy=false;return}}S.busy=false;if(!ok){lock(g.type,{h:g.h,reason:g.reason,model:g.model});S.msg='Resume chưa xác nhận; gate đã khóa lại.';render()}else emit({id:`resumed:${g.id}`,type:'GATE_RESUMED',severity:'info',group:'operator',title:'Ghost+ resumed',text:g.id,episodeId:g.id,desktop:false})}
-function evaluate(){const k=key();if(k!==S.key){S.key=k;S.gate=gate(k);S.last=''}if(S.gate){if(clearLegacyOperationalGate())return;if(autoReconcileTransientGate())return;enforce();return}if(q('#ghostplus-context-boundary-state')){lock('CONTEXT_BOUNDARY',{reason:'Context limit reached; manual handoff to a new chat is required.'});return}if(modelBusy()){render();return}const t=latest(),h=hash(t);if(t&&h!==S.last){S.last=h;const [ty,model]=term(t);if(ty==='human'&&ack(k)!==h)lock('HUMAN_REQUIRED',{h,reason:reason(t)});else if(ty==='relay'&&ack(k)!==h)lock('MODEL_RELAY',{h,reason:reason(t),model})}if(S.gate)enforce();else render()}
+function evaluate(){const k=key();if(k!==S.key){S.key=k;S.gate=gate(k);S.last=''}if(S.gate){if(clearLegacyOperationalGate())return;if(clearV01513FalseTriageGate())return;if(autoReconcileTransientGate())return;enforce();return}if(q('#ghostplus-context-boundary-state')){lock('CONTEXT_BOUNDARY',{reason:'Context limit reached; manual handoff to a new chat is required.'});return}if(modelBusy()){render();return}const t=latest(),h=hash(t);if(t&&h!==S.last){S.last=h;const [ty,model]=term(t);if(ty==='human'&&ack(k)!==h)lock('HUMAN_REQUIRED',{h,reason:reason(t)});else if(ty==='relay'&&ack(k)!==h)lock('MODEL_RELAY',{h,reason:reason(t),model})}if(S.gate)enforce();else render()}
 RT.listen(document,'click',e=>{const b=e.target instanceof Element?e.target.closest('#gitl9 [data-a="play"]'):null,g=S.gate||gate();if(!b||!g)return;e.preventDefault();e.stopImmediatePropagation();S.msg=`Play bị khóa bởi ${g.type} · ${g.id}.`;render()},true);
 RT.interval(evaluate,600);
 RT.cleanup(()=>{S.busy=false;document.documentElement.removeAttribute('data-ghostplus-gate');document.title=document.title.replace(/^[🔴🟠]\s+(HUMAN|RELAY|CONTEXT|AUTH|RECOVERY|BLOCKED)\s+·\s+/,'')});

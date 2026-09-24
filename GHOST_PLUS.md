@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.13`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.14`.
 
 ## Added behavior
 
@@ -356,3 +356,11 @@ The manual diagnostic is `debug/ghost-scroll-diagnostic.user.js`. It is not incl
 - Parser báo cáo timeout chấp nhận định dạng Markdown đơn giản như `**TRẠNG THÁI:**` và backtick/underscore.
 - Nếu report có header timeout nhưng thiếu trường bắt buộc, core không còn tin riêng terminal marker PROCEED/HALT; trạng thái đó được khóa HUMAN thay vì tự tiếp tục.
 - Mục tiêu là giữ nguyên nguyên tắc: network failure rõ ràng không tạo HUMAN giả, nhưng report không đủ thông tin cũng không được phép auto-continue.
+
+
+## v0.15.14 triage underscore parser
+
+- Sửa regression của v0.15.13: bước “bỏ Markdown” đã xóa toàn bộ dấu `_`, làm `TIẾP_TỤC` thành `TIẾPTỤC` và khiến report hợp lệ bị hiểu thành thiếu trường bắt buộc.
+- Parser mới cho phép wrapper Markdown quanh nhãn/giá trị nhưng giữ nguyên underscore bên trong enum `TIẾP_TỤC`, `CẦN_NGƯỜI`, `ĐÃ_XONG`, `KHÔNG_CHẮC`.
+- Thêm migration cực hẹp cho false HUMAN gate do chính bug v0.15.13 tạo: chỉ tự clear khi reason đúng lỗi cũ, assistant hash đúng report hiện tại, report là `TIẾP_TỤC`, side effect chưa xác minh = `không`, và terminal cuối là PROCEED.
+- Sau khi clear false gate, Ghost tự Play lại nếu không BUSY và composer trống. HUMAN thật không bị ảnh hưởng.

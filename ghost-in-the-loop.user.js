@@ -186,9 +186,9 @@ function finalLine(text) {
 function timeoutTriage(text) {
   const src=String(text||'');
   if(!/\[GHOST TIMEOUT TRIAGE REPORT\]/i.test(src))return null;
-  const plain=src.replace(/[*_`]/g,'');
-  const sm=plain.match(/(?:^|\n)\s*TRẠNG THÁI\s*:\s*(TIẾP_TỤC|TIẾP TỤC|CẦN_NGƯỜI|CẦN NGƯỜI|ĐÃ_XONG|ĐÃ XONG|KHÔNG_CHẮC|KHÔNG CHẮC)\s*(?=\n|$)/i);
-  const em=plain.match(/(?:^|\n)\s*SIDE EFFECT CHƯA XÁC MINH\s*:\s*(có|không)\s*(?=\n|$)/i);
+  const md='[*_`]*';
+  const sm=src.match(new RegExp('(?:^|\\n)\\s*'+md+'TRẠNG THÁI'+md+'\\s*:\\s*'+md+'(TIẾP_TỤC|TIẾP TỤC|CẦN_NGƯỜI|CẦN NGƯỜI|ĐÃ_XONG|ĐÃ XONG|KHÔNG_CHẮC|KHÔNG CHẮC)'+md+'\\s*(?=\\n|$)','i'));
+  const em=src.match(new RegExp('(?:^|\\n)\\s*'+md+'SIDE EFFECT CHƯA XÁC MINH'+md+'\\s*:\\s*'+md+'(có|không)'+md+'\\s*(?=\\n|$)','i'));
   const rawStatus=semanticText(sm?.[1]||'').toUpperCase().replace(/\s+/g,'_');
   const status=rawStatus==='TIẾP_TỤC'?'continue':rawStatus==='CẦN_NGƯỜI'?'human':rawStatus==='ĐÃ_XONG'?'complete':rawStatus==='KHÔNG_CHẮC'?'uncertain':'';
   return {status,sideEffectUnverified:semanticText(em?.[1]||'').toLowerCase()==='có',complete:!!status&&!!em};

@@ -23,7 +23,7 @@ assert.match(manager,/h\.abort\(\)/);
 assert.match(manager,/Object\.defineProperty\(p\.obj,p\.key,p\.desc\)/);
 assert.match(manager,/ghostplusLastDiagnostics/);
 assert.match(manager,/allZero:Object\.values\(totals\)\.every/);
-assert.match(loader,/ghostplus\.15\.10/);
+assert.match(loader,/ghostplus\.15\.11/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);
@@ -118,3 +118,19 @@ assert.doesNotMatch(watchdog,/title\*="stop"/,'Watchdog must not use wildcard gl
 assert.match(watchdog,/button\[data-testid="stop-button"\]/,'Watchdog must align with core stop-button selector');
 assert.match(watchdog,/button\[aria-label="Stop generating"\]/,'Watchdog must align with core Stop generating selector');
 assert.match(watchdog,/button\[aria-label="Stop streaming"\]/,'Watchdog must align with core Stop streaming selector');
+
+const timeoutWeb=read('ghost-plus-web-recovery.js');
+const timeoutCore=read('ghost-in-the-loop.user.js');
+const timeoutGate=read('ghost-plus-operator-gate.js');
+assert.match(timeoutWeb,/\[GHOST TIMEOUT TRIAGE REPORT\]/,'timeout triage report header missing');
+assert.match(timeoutWeb,/TRẠNG THÁI: TIẾP_TỤC \| CẦN_NGƯỜI \| ĐÃ_XONG \| KHÔNG_CHẮC/,'timeout triage status choices missing');
+assert.match(timeoutWeb,/SIDE EFFECT CHƯA XÁC MINH: có \| không/,'timeout triage side-effect field missing');
+assert.match(timeoutWeb,/CHỈ kiểm tra trạng thái và lập báo cáo; chưa tiếp tục công việc/,'timeout triage must be report-only');
+assert.match(timeoutWeb,/chờ ô nhập trống để gửi báo cáo trạng thái\. Không ghi đè và không nâng HUMAN/,'composer draft must wait without HUMAN');
+assert.doesNotMatch(timeoutWeb,/Ô nhập đang có nội dung\. Ghost\+ không ghi đè recovery probe; cần kiểm tra thủ công/,'legacy composer-draft HUMAN escalation returned');
+assert.match(timeoutCore,/function timeoutTriage\(text\)/,'core timeout triage parser missing');
+assert.match(timeoutCore,/triageMismatch:true/,'triage marker mismatch guard missing');
+assert.match(timeoutCore,/continue after timeout triage/,'safe triage continuation path missing');
+assert.match(timeoutCore,/TIMEOUT_TRIAGE_CONTINUE/,'timeout triage continue event missing');
+assert.match(timeoutGate,/function clearLegacyOperationalGate\(\)/,'legacy composer-draft gate migration missing');
+assert.match(timeoutGate,/legacy-composer-draft-gate/,'legacy composer-draft gate migration reason missing');

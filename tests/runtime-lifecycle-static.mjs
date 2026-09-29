@@ -23,7 +23,12 @@ assert.match(manager,/h\.abort\(\)/);
 assert.match(manager,/Object\.defineProperty\(p\.obj,p\.key,p\.desc\)/);
 assert.match(manager,/ghostplusLastDiagnostics/);
 assert.match(manager,/allZero:Object\.values\(totals\)\.every/);
-assert.match(loader,/ghostplus\.15\.15/);
+assert.match(manager,/CHATGPT_COMPOSER_SELECTORS/,'shared ChatGPT composer contract missing');
+assert.match(manager,/[data-testid="prompt-textarea"]/,'current ChatGPT data-testid composer selector missing');
+assert.match(manager,/role="textbox"/,'role-based ChatGPT composer fallback missing');
+assert.match(manager,/stageComposerText/,'shared staged-write verifier missing');
+assert.match(manager,/top\.score-second\.score<90/,'ambiguous composer candidates must fail closed');
+assert.match(loader,/ghostplus\.15\.16/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);
@@ -50,6 +55,12 @@ assert.doesNotMatch(read('ghost-in-the-loop.user.js'),/data-a="unload"/,'Unload 
 for(const file of ['ghost-in-the-loop.user.js','ghost-plus-operator-gate.js','ghost-plus-companion-v2.js','ghost-plus-web-recovery.js','ghost-plus-turn-budget-v2.js']){
   assert.match(read(file),/preventScroll:true/,`${file}: composer focus must prevent scroll`);
 }
+for(const file of ['ghost-in-the-loop.user.js','ghost-plus-operator-gate.js','ghost-plus-companion-v2.js','ghost-plus-web-recovery.js','ghost-plus-turn-budget-v2.js']){
+  assert.match(read(file),/__ghostPlusRuntime\?\.dom/,`${file}: must use shared ChatGPT composer contract`);
+}
+assert.match(read('ghost-plus-web-recovery.js'),/requireEmpty:true/,'web recovery must not overwrite a newly-arrived user draft');
+assert.match(read('ghost-plus-companion-v2.js'),/requireEmpty:true/,'watchdog recovery must not overwrite a newly-arrived user draft');
+assert.match(read('ghost-plus-operator-gate.js'),/requireEmpty:true/,'operator resume must not overwrite a user draft');
 console.log('Ghost+ runtime lifecycle static audit: PASS');
 
 assert.match(watchdog,/tickMs:\s*2000/,'watchdog BUSY polling must stay throttled');
@@ -151,7 +162,7 @@ assert.match(webRecovery,/const explicitFailureType=\['SEND_TIMEOUT','CONNECTION
 assert.doesNotMatch(webRecovery,/retryEvidence:/,'retry button must not be required for verified send failure');
 assert.match(webRecovery,/corroborating=\{/,'corroborating failure diagnostics missing');
 assert.doesNotMatch(timeoutCore,/src\.replace\(\/\[\*_\\`\]\/g,''\)/,'timeout triage parser must never strip enum underscores globally');
-assert.match(timeoutCore,/const md='\[\*_\\`\]\*';/,'timeout triage markdown wrapper matcher missing');
+assert.match(timeoutCore,/const md='\[\*_`\]\*';/,'timeout triage markdown wrapper matcher missing');
 assert.match(timeoutCore,/triageIncomplete:true/,'incomplete timeout triage must not auto-continue');
 assert.match(timeoutCore,/Báo cáo timeout thiếu trường bắt buộc; không tự tiếp tục/,'incomplete timeout triage reason missing');
 

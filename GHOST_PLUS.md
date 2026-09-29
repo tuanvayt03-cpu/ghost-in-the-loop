@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.15`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.16`.
 
 ## Added behavior
 
@@ -371,3 +371,12 @@ The manual diagnostic is `debug/ghost-scroll-diagnostic.user.js`. It is not incl
 - The v0.15.13 false-HUMAN migration now requires the persisted assistant hash to exist and exactly match the current timeout triage report before it can clear anything.
 - A matching reason without a hash is fail-closed and remains HUMAN; this keeps the migration limited to gates actually created by the v0.15.13 parser regression path.
 - Safe `TIẾP_TỤC` + `SIDE EFFECT CHƯA XÁC MINH: không` + final `PROCEED` is still required; real HUMAN gates are unaffected.
+
+
+## v0.15.16 ChatGPT composer compatibility hardening
+
+- Centralized ChatGPT composer discovery in the owned runtime so core Play, Web Recovery, Watchdog, Operator Gate, and Turn Budget no longer drift across independent selector lists.
+- Added reviewed support for current role/data-testid/ProseMirror composer shapes while rejecting Ghost-owned UI, hidden/disabled nodes, sidebar/dialog decoys, and ambiguous equal-confidence candidates.
+- Recovery and Resume staging now re-acquire the composer after framework reconciliation and require the complete normalized prompt on the same fresh node across two observations before proceeding.
+- Web Recovery, Watchdog Recovery, and Operator Resume use an atomic require-empty guard so a user draft that appears during the staging race is never overwritten.
+- Send authority is unchanged: this patch only repairs composer discovery/staging. At-most-once Send, uncertain-send hard stop, and no-blind-resend invariants remain intact.

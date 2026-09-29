@@ -76,8 +76,8 @@ function budgetContract(){
     'Do not replay, resend, or retry any action whose outcome is uncertain.'
   ].join('\n');
 }
-function composer(){ return q('#prompt-textarea') || q('textarea[data-id="root"]'); }
-function composerText(el=composer()){ return norm(el?.innerText ?? el?.textContent ?? el?.value ?? ''); }
+function composer(){ return window.__ghostPlusRuntime?.dom?.composer?.() || q('#prompt-textarea') || q('textarea[data-id="root"]'); }
+function composerText(el=composer()){ const shared=window.__ghostPlusRuntime?.dom?.readComposer; return shared ? shared(el) : norm(el?.innerText ?? el?.textContent ?? el?.value ?? ''); }
 function usersCount(){ return qa('[data-message-author-role="user"]').filter(el=>el.isConnected).length; }
 function ghostRunning(){
   return /^RUNNING\b/i.test(norm(q('#gitl9 .status')?.textContent||''));

@@ -78,7 +78,7 @@ const PROFILES = [
   {
     id: 'chatgpt',
     host: /chatgpt\.com$|chat\.openai\.com$/i,
-    input: ['#prompt-textarea', 'textarea[data-id="root"]'],
+    input: ['#prompt-textarea', '[data-testid="prompt-textarea"]', 'div.ProseMirror[contenteditable="true"]', '[role="textbox"][contenteditable="true"]', 'div[contenteditable="true"][data-placeholder]', 'textarea[data-id="root"]'],
     send: ['#composer-submit-button', 'button[data-testid="send-button"]', 'button[aria-label="Send prompt"]', 'button[aria-label="Send message"]'],
     stop: ['button[data-testid="stop-button"]', 'button[aria-label="Stop generating"]', 'button[aria-label="Stop streaming"]'],
     user: ['[data-message-author-role="user"]'],
@@ -166,7 +166,13 @@ function queryAll(selectors) {
   }
   return out;
 }
-function composer() { return queryFirst(HOST.input); }
+function composer() {
+  if (HOST.id === 'chatgpt') {
+    const shared = window.__ghostPlusRuntime?.dom?.composer?.();
+    if (shared) return shared;
+  }
+  return queryFirst(HOST.input);
+}
 function nodeText(el) { return displayText(el?.innerText ?? el?.textContent ?? el?.value ?? ''); }
 function assistantText() {
   const nodes = queryAll(HOST.assistant).filter(el => el.isConnected && nodeText(el));
@@ -302,6 +308,9 @@ function cleanerzPrompt() {
 }
 
 async function setComposerText(text) {
+  if (HOST.id === 'chatgpt' && window.__ghostPlusRuntime?.dom?.stageComposerText) {
+    return await window.__ghostPlusRuntime.dom.stageComposerText(text,RT,{requireEmpty:false,verifyMs:WRITE_VERIFY_MS});
+  }
   const expected = semanticText(text); let el = composer();
   if (!el) return { ok: false, why: 'input-missing' };
   const preservedSelection = captureExternalSelection(el);

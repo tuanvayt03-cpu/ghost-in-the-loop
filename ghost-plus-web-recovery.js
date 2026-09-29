@@ -113,10 +113,11 @@ function requireHuman(snap, message, gateMeta={}) {
   } catch (_) {}
   signal('CORE_BLOCKED','critical','Ghost+ web supervisor',msg,{group:'operator',reason:msg});
 }
-function composer() { return q('#prompt-textarea') || q('textarea[data-id="root"]'); }
+function composer() { return window.__ghostPlusRuntime?.dom?.composer?.() || q('#prompt-textarea') || q('textarea[data-id="root"]'); }
 function composerText() {
   const el = composer();
-  return norm(el?.innerText ?? el?.textContent ?? el?.value ?? '');
+  const shared=window.__ghostPlusRuntime?.dom?.readComposer;
+  return shared ? shared(el) : norm(el?.innerText ?? el?.textContent ?? el?.value ?? '');
 }
 function users() { return qa('[data-message-author-role="user"]').filter(el => el.isConnected); }
 function assistants() { return qa('[data-message-author-role="assistant"]').filter(el => el.isConnected); }
@@ -370,8 +371,13 @@ function recoveryPrompt(snap) {
 }
 
 async function setComposerText(text) {
+  const dom=window.__ghostPlusRuntime?.dom;
+  if(dom?.stageComposerText){
+    const staged=await dom.stageComposerText(text,RT,{requireEmpty:true,verifyMs:1800});
+    return !!staged?.ok;
+  }
   const expected = norm(text), el = composer();
-  if (!el) return false;
+  if (!el || composerText()) return false;
   const preservedSelection = captureExternalSelection(el);
   try {
     focusNoScroll(el);

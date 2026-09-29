@@ -2,7 +2,7 @@
 'use strict';
 
 const ROOT='__ghostPlusRuntime';
-const VERSION='0.15.15';
+const VERSION='0.15.16';
 const previous=window[ROOT];
 try { if(previous?.active && typeof previous.destroy==='function') previous.destroy('reinject'); } catch (_) {}
 
@@ -187,8 +187,157 @@ function destroy(reason='operator'){
   return final;
 }
 
+
+const CHATGPT_COMPOSER_SELECTORS=Object.freeze([
+  '#prompt-textarea',
+  '[data-testid="prompt-textarea"]',
+  'div.ProseMirror[contenteditable="true"]',
+  '[role="textbox"][contenteditable="true"]',
+  'div[contenteditable="true"][data-placeholder]',
+  'textarea[data-id="root"]'
+]);
+function domNorm(v){return String(v??'').replace(/\u00a0/g,' ').replace(/\r/g,'').replace(/\s+/g,' ').trim()}
+function domReadComposer(el=domComposer()){return domNorm(el?.innerText??el?.textContent??el?.value??'')}
+function domStrongIdentity(el){return !!el&&(el.id==='prompt-textarea'||el.getAttribute?.('data-testid')==='prompt-textarea')}
+function domVisible(el){
+  if(!el||!el.isConnected||el.disabled||el.getAttribute?.('aria-disabled')==='true'||el.getAttribute?.('aria-hidden')==='true'||el.hidden)return false;
+  try{const s=getComputedStyle(el);if(s?.display==='none'||s?.visibility==='hidden')return false}catch(_){}
+  try{if(el.offsetWidth||el.offsetHeight||el.getClientRects?.().length)return true}catch(_){}
+  return el===document.activeElement;
+}
+function domSemanticHint(el){
+  const hint=[
+    el?.getAttribute?.('aria-label'),
+    el?.getAttribute?.('placeholder'),
+    el?.getAttribute?.('data-placeholder'),
+    el?.getAttribute?.('data-testid')
+  ].filter(Boolean).join(' ');
+  return /message|prompt|ask|chat|anything|send|nhắn|tin nhắn|hỏi/i.test(hint);
+}
+function domComposerCandidate(el){
+  if(!domVisible(el))return false;
+  const editable=el?.tagName==='TEXTAREA'||el?.isContentEditable||el?.getAttribute?.('contenteditable')==='true';
+  if(!editable)return false;
+  try{if(el.closest('#gitl9,[id^="ghostplus-"]'))return false}catch(_){}
+  const form=el.closest?.('form');
+  if(!domStrongIdentity(el)&&!domSemanticHint(el)&&!form&&el!==document.activeElement)return false;
+  return true;
+}
+function domComposerScore(el){
+  let n=0;
+  if(el.id==='prompt-textarea')n+=1400;
+  if(el.getAttribute?.('data-testid')==='prompt-textarea')n+=1300;
+  if(el.closest?.('form[data-type="unified-composer"]'))n+=650;
+  if(el.closest?.('form[data-testid="composer"]'))n+=600;
+  if(el.closest?.('form'))n+=250;
+  if(el.getAttribute?.('role')==='textbox'&&(el.isContentEditable||el.getAttribute?.('contenteditable')==='true'))n+=320;
+  if(el.classList?.contains('ProseMirror'))n+=260;
+  if(el.getAttribute?.('data-placeholder'))n+=180;
+  if(domSemanticHint(el))n+=220;
+  if(el.tagName==='TEXTAREA')n+=120;
+  if(el===document.activeElement||el.contains?.(document.activeElement))n+=160;
+  try{const r=el.getBoundingClientRect?.();if(r&&Number.isFinite(r.top)&&r.top>(window.innerHeight||800)*0.45)n+=90}catch(_){}
+  if(!domStrongIdentity(el)&&el.closest?.('nav,aside,[role="dialog"]'))n-=1000;
+  return n;
+}
+function domComposerCandidates(){
+  if(!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname))return [];
+  const seen=new Set(),out=[];
+  for(const selector of CHATGPT_COMPOSER_SELECTORS){
+    let nodes=[];try{nodes=[...document.querySelectorAll(selector)]}catch(_){}
+    for(const el of nodes){
+      if(seen.has(el)){continue}seen.add(el);
+      if(domComposerCandidate(el))out.push({el,score:domComposerScore(el)});
+    }
+  }
+  return out.sort((a,b)=>b.score-a.score);
+}
+function domComposer(){
+  const ranked=domComposerCandidates();
+  if(!ranked.length||ranked[0].score<420)return null;
+  const top=ranked[0],second=ranked[1];
+  if(domStrongIdentity(top.el))return top.el;
+  if(second&&top.score-second.score<90)return null;
+  return top.el;
+}
+function domCaptureSelection(el){
+  try{
+    const sel=window.getSelection?.();if(!sel||sel.rangeCount===0||sel.isCollapsed)return null;
+    const a=sel.anchorNode,f=sel.focusNode;if((a&&el?.contains?.(a))||(f&&el?.contains?.(f)))return null;
+    const ranges=[];for(let i=0;i<sel.rangeCount;i++)ranges.push(sel.getRangeAt(i).cloneRange());return ranges;
+  }catch(_){return null}
+}
+function domRestoreSelection(ranges){
+  if(!ranges?.length)return;
+  try{const sel=window.getSelection?.();if(!sel)return;const live=ranges.filter(r=>r.startContainer?.isConnected&&r.endContainer?.isConnected);if(!live.length)return;sel.removeAllRanges();for(const r of live)sel.addRange(r)}catch(_){}
+}
+function domFocusNoScroll(el){try{el?.focus?.({preventScroll:true})}catch(_){try{el?.focus?.()}catch(_){}}}
+function domWriteComposer(el,text){
+  if(!el)return false;
+  const preserved=domCaptureSelection(el);
+  try{
+    domFocusNoScroll(el);
+    if(el.isContentEditable||el.getAttribute?.('contenteditable')==='true'){
+      const range=document.createRange();range.selectNodeContents(el);
+      const sel=window.getSelection?.();sel?.removeAllRanges?.();sel?.addRange?.(range);
+      let inserted=false;try{inserted=!!document.execCommand?.('insertText',false,text)}catch(_){}
+      if(!inserted){
+        el.textContent=text;
+        const E=typeof InputEvent==='function'?InputEvent:Event;
+        el.dispatchEvent(new E('input',{bubbles:true,inputType:'insertText',data:text}));
+      }else el.dispatchEvent(new Event('input',{bubbles:true}));
+    }else{
+      const proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
+      const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
+      if(setter)setter.call(el,text);else el.value=text;
+      el.dispatchEvent(new Event('input',{bubbles:true}));
+      el.dispatchEvent(new Event('change',{bubbles:true}));
+    }
+    return true;
+  }catch(_){return false}
+  finally{domRestoreSelection(preserved)}
+}
+function domFrame(scope){
+  return new Promise(resolve=>{
+    if(!scope?.alive?.()){resolve(false);return}
+    let settled=false;
+    const done=()=>{if(settled)return;settled=true;resolve(scope.alive())};
+    const id=scope.raf?.(done);
+    if(id==null)done();
+  });
+}
+async function stageComposerText(text,scope,options={}){
+  if(!scope?.alive?.())return{ok:false,why:'runtime-destroyed'};
+  const expected=domNorm(text),requireEmpty=!!options.requireEmpty,verifyMs=Math.max(300,Number(options.verifyMs)||1800);
+  const first=domComposer();
+  if(!first)return{ok:false,why:'input-missing'};
+  if(requireEmpty&&domReadComposer(first))return{ok:false,why:'composer-not-empty'};
+  if(!domWriteComposer(first,String(text??'')))return{ok:false,why:'write-failed'};
+  await domFrame(scope);await domFrame(scope);
+  const started=Date.now();let stableEl=null,stableCount=0,observed='';
+  while(Date.now()-started<verifyMs){
+    if(!scope.alive())return{ok:false,why:'runtime-destroyed'};
+    const current=domComposer();
+    if(current){
+      observed=domReadComposer(current);
+      if(observed===expected){
+        if(current===stableEl)stableCount+=1;else{stableEl=current;stableCount=1}
+        if(stableCount>=2)return{ok:true,el:current,replaced:current!==first};
+      }else{stableEl=null;stableCount=0}
+    }
+    const alive=await scope.sleep(80);if(!alive)return{ok:false,why:'runtime-destroyed'};
+  }
+  return{ok:false,why:'visible-text-mismatch',expectedLength:expected.length,observedLength:observed.length};
+}
+const dom=Object.freeze({
+  composer:domComposer,
+  composerCandidates:domComposerCandidates,
+  readComposer:domReadComposer,
+  stageComposerText
+});
+
 const runtime=Object.freeze({
-  version:VERSION,generation:seq,get active(){return active},module:makeScope,destroy,diagnostics
+  version:VERSION,generation:seq,get active(){return active},module:makeScope,destroy,diagnostics,dom
 });
 window[ROOT]=runtime;
 })();

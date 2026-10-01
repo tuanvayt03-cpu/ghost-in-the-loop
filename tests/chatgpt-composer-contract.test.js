@@ -75,3 +75,55 @@ test('requireEmpty prevents recovery from overwriting a user draft',async()=>{
   expect(result).toMatchObject({ok:false,why:'composer-not-empty'});
   expect(rt.dom.readComposer(rt.dom.composer())).toBe('my draft');
 });
+
+
+test('reads current conversation-turn articles and preserves terminal marker line boundaries',()=>{
+  document.body.innerHTML=`
+    <main>
+      <article data-testid="conversation-turn-1" aria-label="You said:"><div>continue this task</div></article>
+      <article data-testid="conversation-turn-2" aria-label="ChatGPT said:"><div class="markdown">working result
+[[GITL::PROCEED]]</div></article>
+    </main>
+  `;
+  document.querySelectorAll('article').forEach(el=>show(el,{top:200}));
+  const rt=boot();
+  const turns=rt.dom.chatgptTurns();
+  expect(turns.map(x=>x.role)).toEqual(['user','assistant']);
+  expect(turns[1].text).toContain('\n[[GITL::PROCEED]]');
+  expect(rt.dom.latestChatgptAssistantText()).toBe('working result\n[[GITL::PROCEED]]');
+  expect(rt.dom.chatgptUserCount()).toBe(1);
+});
+
+test('detects the current composer stop-button mode as active generation',()=>{
+  document.body.innerHTML=`
+    <main>
+      <form data-type="unified-composer">
+        <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT"></div>
+        <button id="composer-submit-button" data-testid="stop-button" aria-label="Stop streaming"></button>
+      </form>
+    </main>
+  `;
+  show(document.getElementById('prompt-textarea'));
+  const stop=show(document.getElementById('composer-submit-button'),{width:36,height:36});
+  const rt=boot();
+  expect(rt.dom.isChatgptGenerating()).toBe(true);
+  stop.setAttribute('data-testid','send-button');
+  stop.setAttribute('aria-label','Send prompt');
+  expect(rt.dom.isChatgptGenerating()).toBe(false);
+});
+
+test('recognizes a thinking status leaf in the latest turn without scanning answer prose',()=>{
+  document.body.innerHTML=`
+    <main>
+      <article data-testid="conversation-turn-2" aria-label="ChatGPT said:">
+        <div><span data-status>Thinking</span></div>
+      </article>
+    </main>
+  `;
+  const article=show(document.querySelector('article'),{top:200});
+  show(document.querySelector('[data-status]'),{top:230,width:80,height:20});
+  const rt=boot();
+  expect(rt.dom.isChatgptGenerating()).toBe(true);
+  document.querySelector('[data-status]').className='markdown';
+  expect(rt.dom.isChatgptGenerating()).toBe(false);
+});

@@ -2,7 +2,7 @@
 'use strict';
 
 const ROOT='__ghostPlusRuntime';
-const VERSION='0.15.16';
+const VERSION='0.15.17';
 const previous=window[ROOT];
 try { if(previous?.active && typeof previous.destroy==='function') previous.destroy('reinject'); } catch (_) {}
 
@@ -329,11 +329,97 @@ async function stageComposerText(text,scope,options={}){
   }
   return{ok:false,why:'visible-text-mismatch',expectedLength:expected.length,observedLength:observed.length};
 }
+
+const CHATGPT_TURN_SELECTOR='article[data-testid*="conversation-turn"]';
+function domChatGptRole(node){
+  if(!node)return'';
+  const attr=String(node.getAttribute?.('data-message-author-role')||node.getAttribute?.('data-author')||'');
+  if(/assistant/i.test(attr))return'assistant';
+  if(/user/i.test(attr))return'user';
+  const testid=String(node.getAttribute?.('data-testid')||'');
+  if(/assistant/i.test(testid))return'assistant';
+  if(/user/i.test(testid))return'user';
+  const label=String(node.getAttribute?.('aria-label')||'');
+  if(/assistant|chatgpt/i.test(label))return'assistant';
+  if(/^(?:you|user)\b/i.test(label))return'user';
+  let nested=null;
+  try{nested=node.querySelector?.('[data-message-author-role],[data-author]')||null}catch(_){}
+  if(nested&&nested!==node)return domChatGptRole(nested);
+  return'';
+}
+function domChatGptTurnText(node){
+  if(!node)return'';
+  let content=node;
+  try{
+    content=node.querySelector?.('[data-message-author-role] .markdown')
+      ||node.querySelector?.('.markdown')
+      ||node.querySelector?.('[data-message-author-role],[data-author]')
+      ||node;
+  }catch(_){}
+  return domNorm(content?.innerText??content?.textContent??'');
+}
+function domChatGptTurns(){
+  if(!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname))return[];
+  let nodes=[];
+  try{nodes=[...document.querySelectorAll(CHATGPT_TURN_SELECTOR)].filter(x=>x.isConnected)}catch(_){}
+  if(!nodes.length){
+    try{nodes=[...document.querySelectorAll('[data-message-author-role],[data-author]')].filter(x=>x.isConnected)}catch(_){}
+  }
+  const rows=[];
+  for(const el of nodes){
+    const role=domChatGptRole(el);if(!role)continue;
+    const text=domChatGptTurnText(el);if(!text)continue;
+    rows.push(Object.freeze({role,text,el}));
+  }
+  return rows;
+}
+function domLatestChatGptAssistantText(){
+  const rows=domChatGptTurns().filter(x=>x.role==='assistant');
+  return rows.length?rows[rows.length-1].text:'';
+}
+function domChatGptUserCount(){return domChatGptTurns().filter(x=>x.role==='user').length}
+function domIsChatGptGenerating(){
+  if(!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname))return false;
+  const selectors=[
+    '#composer-submit-button[data-testid="stop-button"]',
+    'button[data-testid="stop-button"]',
+    'button[aria-label="Stop generating"]',
+    'button[aria-label="Stop streaming"]',
+    'button[aria-label="Stop responding"]'
+  ];
+  for(const selector of selectors){
+    let nodes=[];try{nodes=[...document.querySelectorAll(selector)]}catch(_){}
+    if(nodes.some(el=>domVisible(el)&&!el.closest?.('#gitl9,[id^="ghostplus-"]')))return true;
+  }
+  let controls=[];try{controls=[...document.querySelectorAll('button,[role="button"],[aria-label]')]}catch(_){}
+  for(const control of controls){
+    if(!domVisible(control)||control.closest?.('#gitl9,[id^="ghostplus-"]'))continue;
+    const label=String(control.getAttribute?.('aria-label')||'');
+    if(/Stop generating|Stop streaming|Stop responding|停止生成|正在思考/i.test(label))return true;
+  }
+  const turns=domChatGptTurns();
+  const last=turns[turns.length-1]?.el;
+  if(last){
+    let leaves=[];try{leaves=[last,...last.querySelectorAll('*')]}catch(_){leaves=[last]}
+    for(const el of leaves){
+      if(el.children?.length)continue;
+      if(el.closest?.('.markdown,pre,code'))continue;
+      const text=domNorm(el.textContent||'');
+      if(text&&text.length<=40&&/^(?:Thinking|正在思考|停止生成)(?:\.*)?$/i.test(text))return true;
+    }
+  }
+  return false;
+}
+
 const dom=Object.freeze({
   composer:domComposer,
   composerCandidates:domComposerCandidates,
   readComposer:domReadComposer,
-  stageComposerText
+  stageComposerText,
+  chatgptTurns:domChatGptTurns,
+  latestChatgptAssistantText:domLatestChatGptAssistantText,
+  chatgptUserCount:domChatGptUserCount,
+  isChatgptGenerating:domIsChatGptGenerating
 });
 
 const runtime=Object.freeze({

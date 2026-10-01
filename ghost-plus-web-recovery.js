@@ -119,11 +119,13 @@ function composerText() {
   const shared=window.__ghostPlusRuntime?.dom?.readComposer;
   return shared ? shared(el) : norm(el?.innerText ?? el?.textContent ?? el?.value ?? '');
 }
-function users() { return qa('[data-message-author-role="user"]').filter(el => el.isConnected); }
-function assistants() { return qa('[data-message-author-role="assistant"]').filter(el => el.isConnected); }
+function sharedTurns(){const rows=window.__ghostPlusRuntime?.dom?.chatgptTurns?.();return Array.isArray(rows)?rows:null}
+function users() { const rows=sharedTurns(); if(rows)return rows.filter(x=>x.role==='user').map(x=>x.el).filter(Boolean); return qa('[data-message-author-role="user"]').filter(el => el.isConnected); }
+function assistants() { const rows=sharedTurns(); if(rows)return rows.filter(x=>x.role==='assistant').map(x=>x.el).filter(Boolean); return qa('[data-message-author-role="assistant"]').filter(el => el.isConnected); }
 function latestText(nodes) {
   const el = nodes[nodes.length - 1];
-  return norm(el?.innerText || el?.textContent || '');
+  const rows=sharedTurns(); const row=rows?.find(x=>x.el===el);
+  return row ? norm(row.text) : norm(el?.innerText || el?.textContent || '');
 }
 function stopButtons() {
   const sels = [
@@ -137,7 +139,7 @@ function stopButtons() {
   }
   return out;
 }
-function generating() { return stopButtons().length > 0; }
+function generating() { const shared=window.__ghostPlusRuntime?.dom?.isChatgptGenerating; return shared ? !!shared() : stopButtons().length > 0; }
 
 function retryButtons() {
   return qa('button').filter(el => {

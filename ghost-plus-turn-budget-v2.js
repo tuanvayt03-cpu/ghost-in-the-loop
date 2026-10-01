@@ -78,11 +78,13 @@ function budgetContract(){
 }
 function composer(){ return window.__ghostPlusRuntime?.dom?.composer?.() || q('#prompt-textarea') || q('textarea[data-id="root"]'); }
 function composerText(el=composer()){ const shared=window.__ghostPlusRuntime?.dom?.readComposer; return shared ? shared(el) : norm(el?.innerText ?? el?.textContent ?? el?.value ?? ''); }
-function usersCount(){ return qa('[data-message-author-role="user"]').filter(el=>el.isConnected).length; }
+function usersCount(){ const shared=window.__ghostPlusRuntime?.dom?.chatgptUserCount; return shared ? Number(shared())||0 : qa('[data-message-author-role="user"]').filter(el=>el.isConnected).length; }
 function ghostRunning(){
   return /^RUNNING\b/i.test(norm(q('#gitl9 .status')?.textContent||''));
 }
 function generating(){
+  const shared=window.__ghostPlusRuntime?.dom?.isChatgptGenerating;
+  if(shared)return !!shared();
   const sels=['button[data-testid="stop-button"]','button[aria-label="Stop generating"]','button[aria-label="Stop streaming"]','button[aria-label*="Dừng" i]'];
   for (const sel of sels){
     let nodes=[]; try{nodes=qa(sel);}catch(_){}

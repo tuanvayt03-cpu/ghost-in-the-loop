@@ -104,6 +104,9 @@ assert.match(read('ghost-plus-operator-gate.js'),/latestChatgptAssistantText/,'o
 assert.match(read('ghost-plus-turn-budget-v2.js'),/chatgptUserCount/,'turn budget must use shared user count');
 assert.match(read('ghost-plus-web-recovery.js'),/chatgptTurns/,'web recovery must use shared turn rows');
 assert.match(watchdog,/chatgptTurns/,'watchdog must use shared turn rows');
+assert.match(read('ghost-plus-core-busy-gate.js'),/isChatgptGenerating/,'core busy gate must use shared generation state');
+assert.match(read('ghost-plus-core-busy-gate.js'),/chatgptTurns/,'core busy gate must use shared assistant turn');
+assert.match(read('ghost-plus-uncertain-reconcile.js'),/latestChatgptAssistantText/,'uncertain reconciliation must use shared assistant turn');
 
 const webRecovery=read('ghost-plus-web-recovery.js');
 assert.match(webRecovery,/verifiedFailureRetryMax:\s*1/,'verified SEND_TIMEOUT retry budget regressed');

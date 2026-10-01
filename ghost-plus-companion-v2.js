@@ -124,11 +124,13 @@ function composerText() {
   const shared=window.__ghostPlusRuntime?.dom?.readComposer;
   return shared ? shared(el) : norm(el?.innerText ?? el?.textContent ?? el?.value ?? '');
 }
-function users() { return qa('[data-message-author-role="user"]').filter(el => el.isConnected); }
-function assistants() { return qa('[data-message-author-role="assistant"]').filter(el => el.isConnected); }
+function sharedTurns(){const rows=window.__ghostPlusRuntime?.dom?.chatgptTurns?.();return Array.isArray(rows)?rows:null}
+function users() { const rows=sharedTurns(); if(rows)return rows.filter(x=>x.role==='user').map(x=>x.el).filter(Boolean); return qa('[data-message-author-role="user"]').filter(el => el.isConnected); }
+function assistants() { const rows=sharedTurns(); if(rows)return rows.filter(x=>x.role==='assistant').map(x=>x.el).filter(Boolean); return qa('[data-message-author-role="assistant"]').filter(el => el.isConnected); }
 function latestAssistant() { const list = assistants(); return list[list.length - 1] || null; }
+function latestAssistantText(){const shared=window.__ghostPlusRuntime?.dom?.latestChatgptAssistantText;return shared?norm(shared()||''):norm(latestAssistant()?.textContent||'')}
 function latestTerminalType(){
-  const text=norm(latestAssistant()?.textContent||'');
+  const text=latestAssistantText();
   const line=text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean).pop()||'';
   if(line==='[[GITL::HALT]]'||line==='[[AOA::HALT]]')return'halt';
   if(line==='[[GITL::HUMAN]]'||line==='[[AOA::HUMAN]]')return'human';
@@ -259,12 +261,14 @@ function progressVisible() {
 }
 
 function detectBusyState() {
+  const sharedBusy=window.__ghostPlusRuntime?.dom?.isChatgptGenerating?.()===true;
   const stops = semanticStopButtons();
   const square = squareStopCandidate();
   const reasons = [];
+  if (sharedBusy) reasons.push('shared-generation');
   if (stops.length) reasons.push(`stop:${stops.length}`);
   if (square) reasons.push('composer-stop');
-  if (stops.length || square) {
+  if (sharedBusy || stops.length || square) {
     return {
       busy:true,strong:true,reasons,pending:[],stopCount:stops.length,
       squareStop:!!square,ariaBusy:false,progress:false
@@ -309,8 +313,7 @@ function captureSnapshot(forceDeep=false) {
   let userCount=S.lastSnapshot?.users||0, assistantCount=S.lastSnapshot?.assistants||0;
   let assistantHash=S.lastSnapshot?.assistantHash||hash(''), toolHash=S.lastSnapshot?.toolHash||hash('');
   if (deep) {
-    const last = latestAssistant();
-    const text = norm(last?.textContent || '');
+    const text = latestAssistantText();
     userCount = users().length;
     assistantCount = assistants().length;
     assistantHash = hash(text);

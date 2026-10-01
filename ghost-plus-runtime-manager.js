@@ -197,6 +197,7 @@ const CHATGPT_COMPOSER_SELECTORS=Object.freeze([
   'textarea[data-id="root"]'
 ]);
 function domNorm(v){return String(v??'').replace(/\u00a0/g,' ').replace(/\r/g,'').replace(/\s+/g,' ').trim()}
+function domTurnText(v){return String(v??'').replace(/\u00a0/g,' ').replace(/\r/g,'').replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim()}
 function domReadComposer(el=domComposer()){return domNorm(el?.innerText??el?.textContent??el?.value??'')}
 function domStrongIdentity(el){return !!el&&(el.id==='prompt-textarea'||el.getAttribute?.('data-testid')==='prompt-textarea')}
 function domVisible(el){
@@ -356,7 +357,7 @@ function domChatGptTurnText(node){
       ||node.querySelector?.('[data-message-author-role],[data-author]')
       ||node;
   }catch(_){}
-  return domNorm(content?.innerText??content?.textContent??'');
+  return domTurnText(content?.innerText??content?.textContent??'');
 }
 function domChatGptTurns(){
   if(!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname))return[];

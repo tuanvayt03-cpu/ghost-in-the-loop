@@ -17,6 +17,7 @@ function ghostNeedsGuard() {
   return /^RUNNING\b/i.test(status) || (/^PAUSED\b/i.test(status) && /UNCERTAIN/i.test(status));
 }
 function nativeCoreStopVisible() {
+  if(window.__ghostPlusRuntime?.dom?.isChatgptGenerating?.()) return true;
   const selectors = [
     'button[data-testid="stop-button"]:not([data-ghostplus-sentinel])',
     'button[aria-label="Stop generating"]:not([data-ghostplus-sentinel])',
@@ -43,7 +44,8 @@ function pendingUiVisible() {
       if (t && t.length <= 260 && PENDING_RE.test(t)) return true;
     }
   }
-  const last = qa('[data-message-author-role="assistant"]').filter(el => el.isConnected).pop();
+  const shared=window.__ghostPlusRuntime?.dom?.chatgptTurns?.();
+  const last=Array.isArray(shared)?shared.filter(x=>x.role==='assistant').map(x=>x.el).filter(Boolean).pop():qa('[data-message-author-role="assistant"]').filter(el => el.isConnected).pop();
   if (last) {
     let nodes = [];
     try { nodes = qa('[role="status"],[aria-live],[data-testid*="tool" i],[data-testid*="status" i],details', last); } catch (_) {}

@@ -28,7 +28,14 @@ assert.match(manager,/[data-testid="prompt-textarea"]/,'current ChatGPT data-tes
 assert.match(manager,/role="textbox"/,'role-based ChatGPT composer fallback missing');
 assert.match(manager,/stageComposerText/,'shared staged-write verifier missing');
 assert.match(manager,/top\.score-second\.score<90/,'ambiguous composer candidates must fail closed');
-assert.match(loader,/ghostplus\.15\.16/);
+assert.match(manager,/CHATGPT_TURN_SELECTOR/,'shared ChatGPT turn contract missing');
+assert.match(manager,/article\[data-testid\*="conversation-turn"\]/,'current ChatGPT conversation-turn fallback missing');
+assert.match(manager,/latestChatgptAssistantText/,'shared assistant-turn resolver missing');
+assert.match(manager,/chatgptUserCount/,'shared user-turn counter missing');
+assert.match(manager,/isChatgptGenerating/,'shared ChatGPT generation detector missing');
+assert.match(manager,/#composer-submit-button\[data-testid="stop-button"\]/,'current composer stop mode missing');
+assert.match(manager,/domTurnText/,'turn text must preserve line boundaries');
+assert.match(loader,/ghostplus\.15\.17/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);
@@ -65,8 +72,8 @@ console.log('Ghost+ runtime lifecycle static audit: PASS');
 
 assert.match(watchdog,/tickMs:\s*2000/,'watchdog BUSY polling must stay throttled');
 assert.match(watchdog,/deepScanMs:\s*5000/,'watchdog deep scan cadence regressed');
-assert.match(watchdog,/if \(stops\.length \|\| square\)/,'strong BUSY short-circuit missing');
-assert.match(watchdog,/last\?\.textContent \|\| ''/,'BUSY assistant hash must avoid innerText');
+assert.match(watchdog,/if \(sharedBusy \|\| stops\.length \|\| square\)/,'shared strong BUSY short-circuit missing');
+assert.match(watchdog,/const text = latestAssistantText\(\);/,'BUSY assistant hash must use shared turn text');
 assert.doesNotMatch(watchdog,/last\?\.innerText/,'BUSY assistant hash must not use innerText');
 assert.match(watchdog,/now\(\)-S\.lastLayoutAt < CFG\.layoutMs/,'watchdog layout throttle missing');
 assert.match(budget,/if\(startedAt && !ghostRunning\(\) && !T\.injectedText\)/,'stale Turn Budget reset missing');
@@ -90,6 +97,13 @@ const playBody=corePlay.slice(corePlay.indexOf('async function play()'),corePlay
 assert.match(playBody,/if \(generating\(\)\) \{/,'active generation adopt branch missing');
 assert.match(playBody,/Adopted active ChatGPT turn · monitoring without sending/,'active generation adopt detail missing');
 assert.ok(playBody.indexOf('if (generating()) {') < playBody.indexOf('} else if (draft.trim())'),'active generation must be adopted without Send before draft bootstrap');
+assert.match(core,/latestChatgptAssistantText/,'core must read current ChatGPT turn contract');
+assert.match(core,/chatgptUserCount/,'core must use shared ChatGPT user count');
+assert.match(core,/isChatgptGenerating/,'core must use shared ChatGPT generation state');
+assert.match(read('ghost-plus-operator-gate.js'),/latestChatgptAssistantText/,'operator gate must use shared assistant turn');
+assert.match(read('ghost-plus-turn-budget-v2.js'),/chatgptUserCount/,'turn budget must use shared user count');
+assert.match(read('ghost-plus-web-recovery.js'),/chatgptTurns/,'web recovery must use shared turn rows');
+assert.match(watchdog,/chatgptTurns/,'watchdog must use shared turn rows');
 
 const webRecovery=read('ghost-plus-web-recovery.js');
 assert.match(webRecovery,/verifiedFailureRetryMax:\s*1/,'verified SEND_TIMEOUT retry budget regressed');

@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.16`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.17`.
 
 ## Added behavior
 
@@ -380,3 +380,14 @@ The manual diagnostic is `debug/ghost-scroll-diagnostic.user.js`. It is not incl
 - Recovery and Resume staging now re-acquire the composer after framework reconciliation and require the complete normalized prompt on the same fresh node across two observations before proceeding.
 - Web Recovery, Watchdog Recovery, and Operator Resume use an atomic require-empty guard so a user draft that appears during the staging race is never overwritten.
 - Send authority is unchanged: this patch only repairs composer discovery/staging. At-most-once Send, uncertain-send hard stop, and no-blind-resend invariants remain intact.
+
+
+## v0.15.17 ChatGPT turn-state compatibility hardening
+
+- Centralizes ChatGPT conversation-turn discovery and generation-state detection in the owned runtime, alongside the v0.15.16 composer contract.
+- Supports current `article[data-testid*="conversation-turn"]` turn containers plus legacy `data-message-author-role` / `data-author` role markers, nested role markers, and role-bearing accessibility/test ids.
+- Preserves line boundaries in assistant text so terminal markers such as `[[GITL::PROCEED]]` remain parseable.
+- Core Play, Smart Watchdog, Web Recovery, Operator Gate and Turn Budget now use the same shared turn/user/generation state.
+- Active generation detection includes the current `#composer-submit-button[data-testid="stop-button"]` mode, semantic stop labels, and a narrowly scoped latest-turn thinking status fallback. It does not scan all page prose.
+- When an existing chat is detected but no assistant turn can be resolved safely, Play now reports that compatibility state instead of incorrectly claiming there is no task.
+- Send authority and uncertain-send invariants are unchanged: no blind resend/replay was added.

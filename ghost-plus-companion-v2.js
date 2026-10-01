@@ -128,7 +128,7 @@ function sharedTurns(){const rows=window.__ghostPlusRuntime?.dom?.chatgptTurns?.
 function users() { const rows=sharedTurns(); if(rows)return rows.filter(x=>x.role==='user').map(x=>x.el).filter(Boolean); return qa('[data-message-author-role="user"]').filter(el => el.isConnected); }
 function assistants() { const rows=sharedTurns(); if(rows)return rows.filter(x=>x.role==='assistant').map(x=>x.el).filter(Boolean); return qa('[data-message-author-role="assistant"]').filter(el => el.isConnected); }
 function latestAssistant() { const list = assistants(); return list[list.length - 1] || null; }
-function latestAssistantText(){const shared=window.__ghostPlusRuntime?.dom?.latestChatgptAssistantText;return shared?norm(shared()||''):norm(latestAssistant()?.textContent||'')}
+function latestAssistantText(){const shared=window.__ghostPlusRuntime?.dom?.latestChatgptAssistantText;const raw=shared?shared():(latestAssistant()?.textContent||'');return String(raw||'').replace(/\u00a0/g,' ').replace(/\r/g,'').trim()}
 function latestTerminalType(){
   const text=latestAssistantText();
   const line=text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean).pop()||'';

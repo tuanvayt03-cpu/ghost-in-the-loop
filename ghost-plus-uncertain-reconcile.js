@@ -7,7 +7,7 @@ if (!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname)) return;
 const q=s=>document.querySelector(s), qa=s=>[...document.querySelectorAll(s)], norm=v=>String(v||'').replace(/\s+/g,' ').trim();
 let last='';
 function hash(v){const s=String(v||'');let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return `${s.length}:${(h>>>0).toString(16)}`}
-function latest(){const a=qa('[data-message-author-role="assistant"]').filter(x=>x.isConnected),e=a[a.length-1];return norm(e?.innerText||e?.textContent||'')}
+function latest(){const shared=window.__ghostPlusRuntime?.dom?.latestChatgptAssistantText;if(shared)return String(shared()||'').replace(/\u00a0/g,' ').replace(/\r/g,'').trim();const a=qa('[data-message-author-role="assistant"]').filter(x=>x.isConnected),e=a[a.length-1];return String(e?.innerText||e?.textContent||'').replace(/\u00a0/g,' ').replace(/\r/g,'').trim()}
 function terminal(t){const l=String(t||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean).pop()||'';if(l==='[[GITL::PROCEED]]'||l==='[[AOA::CONTINUE]]')return'proceed';if(l==='[[GITL::HALT]]'||l==='[[AOA::HALT]]')return'halt';if(l==='[[GITL::HUMAN]]'||l==='[[AOA::HUMAN]]')return'human';if(/^\[\[AOA::RELAY:/.test(l))return'relay';return'bad'}
 function uncertain(){const s=norm(q('#gitl9 .status')?.innerText||'');return /^PAUSED\b/i.test(s)&&/UNCERTAIN/i.test(s)}
 function click(a){try{q(`#gitl9 [data-a="${a}"]`)?.click();return true}catch(_){return false}}

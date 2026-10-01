@@ -175,11 +175,27 @@ function composer() {
 }
 function nodeText(el) { return displayText(el?.innerText ?? el?.textContent ?? el?.value ?? ''); }
 function assistantText() {
+  if (HOST.id === 'chatgpt') {
+    const shared=window.__ghostPlusRuntime?.dom?.latestChatgptAssistantText;
+    if (shared) return String(shared()||'');
+  }
   const nodes = queryAll(HOST.assistant).filter(el => el.isConnected && nodeText(el));
   return nodes.length ? nodeText(nodes[nodes.length - 1]) : '';
 }
-function userCount() { return queryAll(HOST.user).filter(el => el.isConnected).length; }
-function generating() { return !!queryFirst(HOST.stop); }
+function userCount() {
+  if (HOST.id === 'chatgpt') {
+    const shared=window.__ghostPlusRuntime?.dom?.chatgptUserCount;
+    if (shared) return Number(shared())||0;
+  }
+  return queryAll(HOST.user).filter(el => el.isConnected).length;
+}
+function generating() {
+  if (HOST.id === 'chatgpt') {
+    const shared=window.__ghostPlusRuntime?.dom?.isChatgptGenerating;
+    if (shared) return !!shared();
+  }
+  return !!queryFirst(HOST.stop);
+}
 function hash(value) {
   const s = String(value || ''); let h = 2166136261;
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
@@ -497,7 +513,8 @@ async function play() {
   } else if (draft.trim()) {
     S.bootstrapped = true; if (!await sendOnce(bootstrapPrompt(draft), 'initial task')) return;
   } else if (!latest) {
-    pause('Type a task into the chat first, then press Play.'); return;
+    const seenUsers=userCount();
+    pause(seenUsers ? 'Existing chat detected, but the latest assistant turn could not be resolved safely.' : 'Type a task into the chat first, then press Play.'); return;
   } else if (parsed.type !== 'bad') {
     S.bootstrapped = true; S.stableHash = hash(latest); S.stableSince = now() - VALID_QUIET_MS;
   } else {
@@ -519,6 +536,8 @@ function complete(detail) { clearContinuity(); S.mode = 'COMPLETE'; S.detail = d
 function domTurns() {
   const rows = [];
   if (HOST.id === 'chatgpt') {
+    const shared=window.__ghostPlusRuntime?.dom?.chatgptTurns?.();
+    if (Array.isArray(shared) && shared.length) return shared.map(x=>({role:x.role,text:x.text}));
     const nodes = [...document.querySelectorAll('[data-message-author-role="user"],[data-message-author-role="assistant"]')];
     for (const el of nodes) {
       const role = el.getAttribute('data-message-author-role'); const text = displayText(el.innerText || el.textContent || '');

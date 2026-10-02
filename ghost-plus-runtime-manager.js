@@ -461,7 +461,6 @@ function domChatGptFaultFallbackText(){
   const now=Date.now();
   if(now-domFaultFallbackAt<3000)return domFaultFallbackText;
   domFaultFallbackAt=now;domFaultFallbackText='';
-  let raw='';try{raw=String(document.body?.textContent||'')}catch(_){}
   const patterns=[
     /resume stream unavailable/i,
     /message delivery timed out(?:\.\s*please try again)?/i,
@@ -469,6 +468,20 @@ function domChatGptFaultFallbackText(){
     /kết nối bị gián đoạn(?:\.|:)?\s*(?:đang chờ câu trả lời hoàn chỉnh)?/i,
     /a network error occurred(?:\.|:)?\s*(?:please check your connection and try again)?/i
   ];
+  const root=document.querySelector?.('main')||document.body;
+  try{
+    if(root&&document.createTreeWalker&&typeof NodeFilter!=='undefined'){
+      const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+      let node=null,seen=0;
+      while((node=walker.nextNode())&&seen++<6000){
+        const parent=node.parentElement;if(!parent||!domRendered(parent)||parent.closest?.('#gitl9,[id^="ghostplus-"]'))continue;
+        const raw=String(node.nodeValue||'');
+        for(const re of patterns){const m=raw.match(re);if(m){domFaultFallbackText=domNorm(m[0]);return domFaultFallbackText}}
+      }
+      return'';
+    }
+  }catch(_){}
+  let raw='';try{raw=String(root?.textContent||'')}catch(_){}
   for(const re of patterns){const m=raw.match(re);if(m){domFaultFallbackText=domNorm(m[0]);break}}
   return domFaultFallbackText;
 }

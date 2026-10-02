@@ -2,7 +2,7 @@
 'use strict';
 
 const ROOT='__ghostPlusRuntime';
-const VERSION='0.15.17';
+const VERSION='0.15.18';
 const previous=window[ROOT];
 try { if(previous?.active && typeof previous.destroy==='function') previous.destroy('reinject'); } catch (_) {}
 
@@ -412,6 +412,124 @@ function domIsChatGptGenerating(){
   return false;
 }
 
+
+function domRendered(el){
+  if(!el||!el.isConnected||el.getAttribute?.('aria-hidden')==='true'||el.hidden)return false;
+  try{const s=getComputedStyle(el);if(s?.display==='none'||s?.visibility==='hidden')return false}catch(_){}
+  try{if(el.offsetWidth||el.offsetHeight||el.getClientRects?.().length)return true}catch(_){}
+  return el===document.activeElement;
+}
+function domChatGptSendMeta(el){
+  const testid=String(el?.getAttribute?.('data-testid')||'').trim();
+  const label=String(el?.getAttribute?.('aria-label')||'').trim();
+  const text=String(el?.textContent||'').replace(/\s+/g,' ').trim();
+  const type=String(el?.getAttribute?.('type')||'').toLowerCase();
+  const id=String(el?.id||'');
+  const stop=testid==='stop-button'||/^(?:stop|stop generating|stop streaming|stop responding|dừng|停止生成|中止)/i.test(label);
+  const send=id==='composer-submit-button'
+    ||testid==='send-button'
+    ||type==='submit'
+    ||/^(?:send(?: prompt| message)?|submit|gửi(?: tin nhắn)?|发送(?:消息|提示)?|提交)$/i.test(label)
+    ||/^(?:send|submit|gửi|发送|提交)$/i.test(text);
+  return{send:send&&!stop,stop,testid,label,type,id};
+}
+function domChatGptSendRoot(){
+  const composer=domComposer();if(!composer)return null;
+  const form=composer.closest?.('form');if(form)return form;
+  let node=composer;
+  for(let depth=0;node&&depth<8;depth++,node=node.parentElement){
+    try{
+      if(node.querySelector?.('#composer-submit-button,button[data-testid="send-button"],button[aria-label="Send"],button[aria-label="Send prompt"],button[aria-label="Send message"],button[aria-label="Submit"],button[aria-label="Gửi"],button[aria-label="Gửi tin nhắn"],button[type="submit"]'))return node;
+    }catch(_){}
+  }
+  return composer.parentElement||null;
+}
+const CHATGPT_SEND_SELECTORS=Object.freeze([
+  '#composer-submit-button',
+  'button[data-testid="send-button"]',
+  'button[aria-label="Send prompt"]',
+  'button[aria-label="Send message"]',
+  'button[aria-label="Send"]',
+  'button[aria-label="Submit"]',
+  'button[aria-label="Gửi"]',
+  'button[aria-label="Gửi tin nhắn"]',
+  'button[aria-label="发送"]',
+  'button[aria-label="发送消息"]',
+  'button[type="submit"]'
+]);
+function domChatGptSendCandidates(){
+  if(!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname))return[];
+  const root=domChatGptSendRoot();if(!root)return[];
+  const seen=new Set(),out=[];
+  for(const selector of CHATGPT_SEND_SELECTORS){
+    let nodes=[];try{nodes=[...root.querySelectorAll(selector)]}catch(_){}
+    for(const el of nodes){
+      if(seen.has(el)){continue}seen.add(el);
+      if(!domRendered(el))continue;
+      const meta=domChatGptSendMeta(el);
+      if(meta.stop||!meta.send)continue;
+      let score=0;
+      if(meta.id==='composer-submit-button')score+=1400;
+      if(meta.testid==='send-button')score+=1300;
+      if(/^Send prompt$/i.test(meta.label))score+=800;
+      if(/^Send message$/i.test(meta.label))score+=780;
+      if(/^(?:Send|Submit|Gửi|Gửi tin nhắn|发送|发送消息)$/i.test(meta.label))score+=700;
+      if(meta.type==='submit')score+=450;
+      out.push({el,meta,score});
+    }
+  }
+  return out.sort((a,b)=>b.score-a.score);
+}
+function domChatGptSendState(){
+  const composer=domComposer();
+  if(!composer)return{found:false,ready:false,mode:'missing',why:'composer-missing',el:null};
+  let exact=null;
+  try{exact=domChatGptSendRoot()?.querySelector?.('#composer-submit-button')||null}catch(_){}
+  if(exact&&domRendered(exact)){
+    const meta=domChatGptSendMeta(exact);
+    if(meta.stop)return{found:true,ready:false,mode:'stop',why:'generation-active',el:exact,disabled:!!exact.disabled,ariaDisabled:exact.getAttribute?.('aria-disabled')==='true'};
+  }
+  const ranked=domChatGptSendCandidates();
+  if(!ranked.length)return{found:false,ready:false,mode:'missing',why:'send-control-missing',el:null};
+  const top=ranked[0],el=top.el;
+  const disabled=!!el.disabled,ariaDisabled=el.getAttribute?.('aria-disabled')==='true';
+  return{
+    found:true,
+    ready:domRendered(el)&&!disabled&&!ariaDisabled,
+    mode:'send',
+    why:disabled||ariaDisabled?'send-not-ready':'ready',
+    el,disabled,ariaDisabled,score:top.score
+  };
+}
+function domIsChatGptSendControl(el){
+  if(!el||!el.isConnected)return false;
+  const root=domChatGptSendRoot();if(!root||!root.contains(el))return false;
+  const meta=domChatGptSendMeta(el);
+  return !!meta.send&&!meta.stop;
+}
+async function domWaitChatGptSendReady(scope,options={}){
+  if(!scope?.alive?.())return{ok:false,why:'runtime-destroyed',found:false,ready:false};
+  const expected=domNorm(options.expectedText||''),timeoutMs=Math.max(500,Number(options.timeoutMs)||10000);
+  const started=Date.now();let last={found:false,ready:false,mode:'missing',why:'send-control-missing'};
+  while(Date.now()-started<timeoutMs){
+    if(!scope.alive())return{ok:false,why:'runtime-destroyed',found:false,ready:false};
+    if(expected&&domReadComposer()!==expected)return{ok:false,why:'composer-changed',found:false,ready:false};
+    last=domChatGptSendState();
+    if(last.ready)return{ok:true,why:'ready',found:true,ready:true,el:last.el,waitedMs:Date.now()-started};
+    const alive=await scope.sleep(100);if(!alive()){}
+  }
+  return{ok:false,why:last.found?'send-not-ready':'send-control-missing',found:!!last.found,ready:false,mode:last.mode||'missing',waitedMs:Date.now()-started};
+}
+function domActuateChatGptSend(expectedText=''){
+  const expected=domNorm(expectedText);
+  if(expected&&domReadComposer()!==expected)return{ok:false,attempted:false,why:'composer-changed'};
+  if(domIsChatGptGenerating())return{ok:false,attempted:false,why:'generation-active'};
+  const state=domChatGptSendState();
+  if(!state.ready||!state.el)return{ok:false,attempted:false,why:state.why||'send-not-ready'};
+  if(!domIsChatGptSendControl(state.el))return{ok:false,attempted:false,why:'send-control-identity-lost'};
+  try{state.el.click();return{ok:true,attempted:true,why:'clicked'}}catch(error){return{ok:false,attempted:true,why:'click-threw',error:String(error?.message||error)}}
+}
+
 const dom=Object.freeze({
   composer:domComposer,
   composerCandidates:domComposerCandidates,
@@ -420,7 +538,11 @@ const dom=Object.freeze({
   chatgptTurns:domChatGptTurns,
   latestChatgptAssistantText:domLatestChatGptAssistantText,
   chatgptUserCount:domChatGptUserCount,
-  isChatgptGenerating:domIsChatGptGenerating
+  isChatgptGenerating:domIsChatGptGenerating,
+  chatgptSendState:domChatGptSendState,
+  waitChatgptSendReady:domWaitChatGptSendReady,
+  actuateChatgptSend:domActuateChatGptSend,
+  isChatgptSendControl:domIsChatGptSendControl
 });
 
 const runtime=Object.freeze({

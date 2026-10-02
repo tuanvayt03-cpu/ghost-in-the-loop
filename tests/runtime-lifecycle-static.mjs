@@ -41,7 +41,16 @@ assert.match(manager,/waitChatgptSendReady/,'bounded ChatGPT send-readiness wait
 assert.match(manager,/actuateChatgptSend/,'shared ChatGPT single-actuation helper missing');
 assert.match(manager,/isChatgptSendControl/,'shared ChatGPT send identity helper missing');
 assert.match(manager,/button\[type="submit"\]/,'composer-scoped semantic submit fallback missing');
-assert.match(loader,/ghostplus\.15\.18/);
+assert.match(manager,/data-turn="user"/,'data-turn user fallback missing');
+assert.match(manager,/data-turn="assistant"/,'data-turn assistant fallback missing');
+assert.match(manager,/chatgptActivityState/,'shared ChatGPT activity-state contract missing');
+assert.match(manager,/CHATGPT_PENDING_RE/,'scoped pending/tool activity matcher missing');
+assert.match(manager,/classifyChatgptFaultText/,'shared ChatGPT fault classifier missing');
+assert.match(manager,/chatgptFaultState/,'shared ChatGPT fault-state resolver missing');
+assert.match(manager,/STREAM_RESUME_UNAVAILABLE/,'Resume stream unavailable classification missing');
+assert.match(manager,/MESSAGE_DELIVERY_TIMEOUT/,'message delivery timeout classification missing');
+assert.match(manager,/domChatGptFaultFallbackText/,'bounded page-text stream-fault fallback missing');
+assert.match(loader,/ghostplus\.15\.19/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);
@@ -119,10 +128,13 @@ assert.match(core,/actuateChatgptSend/,'core must use shared ChatGPT send actuat
 assert.match(budget,/isChatgptSendControl/,'Turn Budget must follow the same shared send identity contract');
 assert.match(core,/Prompt is staged, but the current host Send control did not become ready/,'pre-actuation send failure must remain distinguishable from uncertain send');
 assert.match(core,/if\(actuation\?\.attempted\)/,'post-actuation uncertainty guard missing');
+assert.match(core,/CHATGPT_SEND_CONFIRM_MS = 45000/,'ChatGPT send acceptance window must tolerate delayed renderer/backend acknowledgement');
+assert.match(core,/streamFaultBlocksNewSend/,'core must quarantine known stream-desync faults before new sends');
+assert.match(core,/chatgptFaultState/,'core must use shared stream fault state');
 
 const webRecovery=read('ghost-plus-web-recovery.js');
 assert.match(webRecovery,/verifiedFailureRetryMax:\s*1/,'verified SEND_TIMEOUT retry budget regressed');
-assert.match(webRecovery,/\['SEND_TIMEOUT','CONNECTION_INTERRUPTED'\]\.includes\(error\.type\)/,'explicit recoverable failure classification regressed');
+assert.match(webRecovery,/const explicitFailureType=error\.type==='SEND_TIMEOUT'/,'only an explicit SEND_TIMEOUT may prove a recovery send failed');
 assert.match(webRecovery,/retryVisible:error\.retryVisible===true/,'Retry button must remain corroborating evidence');
 assert.match(webRecovery,/userCountStable:users\(\)\.length===beforeUsers/,'user-count evidence missing');
 assert.match(webRecovery,/assistantCountStable:assistants\(\)\.length===beforeAssistants/,'assistant-count evidence missing');
@@ -146,7 +158,18 @@ assert.match(webRecovery,/kết nối bị gián đoạn/,'connection interrupte
 assert.match(webRecovery,/đang chờ câu trả lời hoàn chỉnh/,'waiting-for-complete-response detector missing');
 assert.match(webRecovery,/return 'CONNECTION_INTERRUPTED'/,'CONNECTION_INTERRUPTED classification missing');
 assert.match(webRecovery,/interruptionSettleMs:\s*30000/,'connection interruption reconnect grace regressed');
-assert.match(webRecovery,/\['SEND_TIMEOUT','CONNECTION_INTERRUPTED','NETWORK_ERROR','GENERATION_ERROR'\]/,'CONNECTION_INTERRUPTED must remain recoverable');
+assert.match(webRecovery,/streamDesyncMinSettleMs:\s*180000/,'stream-desync minimum quarantine regressed');
+assert.match(webRecovery,/streamDesyncQuietMs:\s*90000/,'stream-desync quiet window regressed');
+assert.match(webRecovery,/streamSendVerifyMs:\s*45000/,'stream recovery acceptance window regressed');
+assert.match(webRecovery,/streamRecoveryReady/,'stream-desync recovery safety gate missing');
+assert.match(webRecovery,/lastProgressSig/,'stream progress tracking missing');
+assert.match(webRecovery,/progressSig/,'fault progress signature missing');
+assert.match(webRecovery,/const key = active \? \[error\.type \|\| 'PLAY_SEND_UNCERTAIN', hash\(error\.text \|\| status\)\]/,'fault identity must not depend on changing assistant/user text');
+assert.match(webRecovery,/chatgptFaultState/,'Web Recovery must consume the shared ChatGPT fault contract');
+assert.match(webRecovery,/chatgptActivityState/,'Web Recovery must consume the shared ChatGPT activity contract');
+assert.match(webRecovery,/STREAM_RESUME_UNAVAILABLE/,'Web Recovery must quarantine Resume stream unavailable');
+assert.match(webRecovery,/MESSAGE_DELIVERY_TIMEOUT/,'Web Recovery must quarantine message delivery timeout');
+assert.match(webRecovery,/\['SEND_TIMEOUT','CONNECTION_INTERRUPTED','STREAM_RESUME_UNAVAILABLE','MESSAGE_DELIVERY_TIMEOUT','NETWORK_ERROR','GENERATION_ERROR'\]/,'stream-desync faults must remain recoverable');
 assert.match(webRecovery,/clearManagedRecoveryDraft\(snap\)/,'verified failed recovery must clear its own staged draft');
 
 assert.match(webRecovery,/const explicitWebError = !!error\.type/,'explicit web error detector flag missing');
@@ -187,7 +210,7 @@ assert.match(webRecovery,/await setComposerText\(attempt\.prompt\)/,'verified fa
 assert.match(webRecovery,/Lý do khôi phục: \$\{source\}\./,'managed recovery draft must recognize current Vietnamese prompt');
 assert.match(webRecovery,/chờ ô nhập trống, không ghi đè và không nâng HUMAN/,'unrelated user draft must block retry without false HUMAN');
 
-assert.match(webRecovery,/const explicitFailureType=\['SEND_TIMEOUT','CONNECTION_INTERRUPTED'\]\.includes\(error\.type\);/,'explicit send failure must survive fault-type transition');
+assert.match(webRecovery,/const explicitFailureType=error\.type==='SEND_TIMEOUT';/,'stream-resume/delivery faults must never be treated as proof that Send failed');
 assert.doesNotMatch(webRecovery,/retryEvidence:/,'retry button must not be required for verified send failure');
 assert.match(webRecovery,/corroborating=\{/,'corroborating failure diagnostics missing');
 assert.doesNotMatch(timeoutCore,/src\.replace\(\/\[\*_\\`\]\/g,''\)/,'timeout triage parser must never strip enum underscores globally');

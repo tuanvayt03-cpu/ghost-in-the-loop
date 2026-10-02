@@ -197,10 +197,13 @@ function interruptedBannerText(){
   const t=now();
   if(t-S.lastInterruptScanAt<CFG.interruptionScanMs)return S.lastInterruptText;
   S.lastInterruptScanAt=t;S.lastInterruptText='';
-  let raw='';
-  try{raw=String(document.body?.textContent||'')}catch(_){}
-  const m=raw.match(/(?:connection interrupted(?:\.|:)?\s*(?:waiting for (?:a |the )?complete response)?|kết nối bị gián đoạn(?:\.|:)?\s*(?:đang chờ câu trả lời hoàn chỉnh)?)/i);
-  if(m)S.lastInterruptText=norm(m[0]);
+  const shared=window.__ghostPlusRuntime?.dom?.chatgptFaultState;
+  if(shared){
+    try{
+      const fault=shared();
+      if(fault?.type==='CONNECTION_INTERRUPTED')S.lastInterruptText=norm(fault.text||'');
+    }catch(_){}
+  }
   return S.lastInterruptText;
 }
 function classifyErrorText(text) {
@@ -324,7 +327,7 @@ function explicitFailureExhausted(snap,verdict){
 }
 
 function isStreamDesyncType(type){
-  return ['STREAM_RESUME_UNAVAILABLE','MESSAGE_DELIVERY_TIMEOUT'].includes(String(type||''));
+  return ['STREAM_RESUME_UNAVAILABLE','MESSAGE_DELIVERY_TIMEOUT','CONNECTION_INTERRUPTED'].includes(String(type||''));
 }
 function faultSnapshot() {
   const error = scanWebError();
@@ -341,7 +344,7 @@ function faultSnapshot() {
   const activity=activityState();
   // Fault identity must be independent from turn progress. Otherwise a stale banner plus a
   // changing assistant response becomes a fresh episode and can re-arm recovery repeatedly.
-  const key = active ? [error.type || 'PLAY_SEND_UNCERTAIN', hash(error.text || status)].join('|') : '';
+  const key = active ? (error.type || ['PLAY_SEND_UNCERTAIN',hash(status)].join('|')) : '';
   const progressSig=[userCount,assistantCount,hash(assistantText),activity.busy?activity.reason:'idle'].join('|');
   return {
     active, explicitWebError, pausedUncertain, recoverableType, blockedType,
@@ -627,7 +630,6 @@ function sample() {
 
   if (operatorLocked()) {
     S.recovering = false;
-    S.faultSeenAt = 0;
     renderWebState(snap, 'Operator Gate đang LOCKED; Web Recovery ngủ.');
     return;
   }

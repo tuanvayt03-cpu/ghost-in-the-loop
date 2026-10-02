@@ -127,3 +127,103 @@ test('recognizes a thinking status leaf in the latest turn without scanning answ
   document.querySelector('[data-status]').className='markdown';
   expect(rt.dom.isChatgptGenerating()).toBe(false);
 });
+
+
+test('finds a current ChatGPT send control independently from disabled readiness',()=>{
+  document.body.innerHTML=`
+    <main>
+      <form data-type="unified-composer">
+        <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT">continue task</div>
+        <button id="composer-submit-button" data-testid="send-button" aria-label="Send prompt" disabled></button>
+      </form>
+    </main>
+  `;
+  show(document.getElementById('prompt-textarea'));
+  show(document.getElementById('composer-submit-button'),{width:36,height:36});
+  const rt=boot();
+  const pending=rt.dom.chatgptSendState();
+  expect(pending.found).toBe(true);
+  expect(pending.ready).toBe(false);
+  expect(pending.why).toBe('send-not-ready');
+  document.getElementById('composer-submit-button').disabled=false;
+  const ready=rt.dom.chatgptSendState();
+  expect(ready.ready).toBe(true);
+  expect(rt.dom.isChatgptSendControl(ready.el)).toBe(true);
+});
+
+test('waits through delayed ChatGPT send-button readiness',async()=>{
+  document.body.innerHTML=`
+    <main>
+      <form data-type="unified-composer">
+        <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT">continue task</div>
+        <button id="composer-submit-button" data-testid="send-button" aria-label="Send prompt" disabled></button>
+      </form>
+    </main>
+  `;
+  show(document.getElementById('prompt-textarea'));
+  const button=show(document.getElementById('composer-submit-button'),{width:36,height:36});
+  const rt=boot(),scope=rt.module('send-wait-test');
+  setTimeout(()=>{button.disabled=false},220);
+  const result=await rt.dom.waitChatgptSendReady(scope,{expectedText:'continue task',timeoutMs:900});
+  expect(result.ok).toBe(true);
+  expect(result.waitedMs).toBeGreaterThanOrEqual(150);
+  expect(result.el).toBe(button);
+});
+
+test('rejects the same composer control when it is in stop mode',()=>{
+  document.body.innerHTML=`
+    <main>
+      <form data-type="unified-composer">
+        <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT">continue task</div>
+        <button id="composer-submit-button" data-testid="stop-button" aria-label="Stop streaming"></button>
+      </form>
+    </main>
+  `;
+  show(document.getElementById('prompt-textarea'));
+  const button=show(document.getElementById('composer-submit-button'),{width:36,height:36});
+  const rt=boot();
+  const state=rt.dom.chatgptSendState();
+  expect(state.mode).toBe('stop');
+  expect(state.ready).toBe(false);
+  expect(rt.dom.isChatgptSendControl(button)).toBe(false);
+});
+
+test('supports a composer-scoped semantic submit fallback without selecting outside buttons',()=>{
+  document.body.innerHTML=`
+    <button type="submit" aria-label="Submit">outside</button>
+    <main>
+      <form data-type="unified-composer">
+        <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT">continue task</div>
+        <button type="submit" aria-label="Send"></button>
+      </form>
+    </main>
+  `;
+  show(document.body.firstElementChild,{top:40,width:80,height:30});
+  show(document.getElementById('prompt-textarea'));
+  const inside=show(document.querySelector('main form button'),{width:36,height:36});
+  const rt=boot();
+  const state=rt.dom.chatgptSendState();
+  expect(state.ready).toBe(true);
+  expect(state.el).toBe(inside);
+});
+
+test('actuation fails closed if the staged composer changed and clicks exactly once when unchanged',()=>{
+  document.body.innerHTML=`
+    <main>
+      <form data-type="unified-composer">
+        <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT">continue task</div>
+        <button id="composer-submit-button" data-testid="send-button" aria-label="Send prompt"></button>
+      </form>
+    </main>
+  `;
+  const composer=show(document.getElementById('prompt-textarea'));
+  const button=show(document.getElementById('composer-submit-button'),{width:36,height:36});
+  let clicks=0;button.addEventListener('click',()=>{clicks+=1});
+  const rt=boot();
+  composer.textContent='user changed draft';
+  expect(rt.dom.actuateChatgptSend('continue task')).toMatchObject({ok:false,attempted:false,why:'composer-changed'});
+  expect(clicks).toBe(0);
+  composer.textContent='continue task';
+  expect(rt.dom.actuateChatgptSend('continue task')).toMatchObject({ok:true,attempted:true,why:'clicked'});
+  expect(clicks).toBe(1);
+});

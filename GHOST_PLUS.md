@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.18`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.19`.
 
 ## Added behavior
 
@@ -402,3 +402,28 @@ The manual diagnostic is `debug/ghost-scroll-diagnostic.user.js`. It is not incl
 - Immediately before actuation, Ghost rechecks the staged composer text, generation state, Send identity, and enabled state. If any changed, it fails before clicking.
 - ChatGPT actuation remains exactly one `.click()`. If that actuation occurs but acceptance cannot be confirmed, the existing uncertain-send hard stop remains in force and Ghost does not resend.
 - Turn Budget now recognizes Send through the same shared runtime contract, so delayed/fallback Send controls receive the same budget injection behavior without broad page-wide button matching.
+
+
+## v0.15.19 OpenAI September regression hardening
+
+This release hardens Ghost against a cluster of recent ChatGPT Web state-sync and stream-resume failures rather than treating each visible symptom as an independent selector bug.
+
+- Centralizes ChatGPT **activity state** alongside composer, turn and Send contracts.
+  - Native Stop controls remain strong BUSY evidence.
+  - Scoped status/live regions, `aria-busy`, progress indicators and tool/thinking nodes can provide inferred BUSY evidence when the UI loses its Stop control.
+  - Ordinary assistant prose is never scanned as BUSY text.
+- Adds a shared ChatGPT fault classifier for:
+  - `STREAM_RESUME_UNAVAILABLE`
+  - `MESSAGE_DELIVERY_TIMEOUT`
+  - `CONNECTION_INTERRUPTED`
+  - `SEND_TIMEOUT`
+  - rate-limit/auth/network/generation faults.
+- The exact `Resume stream unavailable` and delivery-timeout banners have a throttled visible-text fallback so unstructured ChatGPT banners are still detected without trusting hidden stale DOM.
+- Supports `data-turn="user|assistant"` as an additional turn fallback; legacy `data-message-author-role` remains supported.
+- A ready Send button is no longer sufficient if ChatGPT still exposes scoped tool/status activity.
+- Core blocks a new send while a known stream-desync banner is active and ChatGPT is not clearly generating; Web Recovery owns the later reconciliation.
+- ChatGPT post-click acceptance observation is extended to 45 seconds. This does not retry or resend.
+- Web Recovery gives `Resume stream unavailable` and `Message delivery timed out` a three-minute minimum quarantine and also requires 90 seconds with no turn/tool progress before issuing any new status probe.
+- Fault identity no longer includes changing user/assistant text. A stale error banner therefore stays one recovery episode while backend progress merely extends the quarantine instead of re-arming recovery.
+- Only explicit `SEND_TIMEOUT` can qualify as evidence that a Ghost recovery Send definitely failed. Connection interruption, stream-resume failure and message-delivery timeout are no longer treated as proof that a request was not accepted.
+- Existing uncertain-send behavior remains fail-closed: once an actuation occurred without acceptance proof, Ghost does not replay it.

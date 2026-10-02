@@ -40,6 +40,7 @@ const VALID_QUIET_MS = 1400;
 const DRIFT_QUIET_MS = 9000;
 const WRITE_VERIFY_MS = 1800;
 const SEND_WAIT_MS = 2200;
+const CHATGPT_SEND_WAIT_MS = 10000;
 const SEND_CONFIRM_MS = 16000;
 const CONTINUITY_KEY = 'ghostplus.continuityLeaseStartedAt';
 
@@ -360,19 +361,26 @@ async function setComposerText(text) {
 }
 
 function localSendButton(el = composer()) {
+  if (HOST.id === 'chatgpt') {
+    const state=window.__ghostPlusRuntime?.dom?.chatgptSendState?.();
+    if(state?.ready&&state.el)return state.el;
+  }
   if (!el) return null;
   for (let node = el, depth = 0; node && depth < 9; node = node.parentElement, depth++) {
     const btn = queryFirst(HOST.send, node); if (btn) return btn;
   }
   return queryFirst(HOST.send);
 }
-async function waitForSendButton(el) {
+async function waitForSendButton(el, expectedText='') {
+  if(HOST.id==='chatgpt'&&window.__ghostPlusRuntime?.dom?.waitChatgptSendReady){
+    return await window.__ghostPlusRuntime.dom.waitChatgptSendReady(RT,{timeoutMs:CHATGPT_SEND_WAIT_MS,expectedText});
+  }
   const started = now();
   while (now() - started < SEND_WAIT_MS) {
-    const btn = localSendButton(composer() || el); if (btn) return btn;
-    await sleep(100); if(!RT.alive()) return null;
+    const btn = localSendButton(composer() || el); if (btn) return {ok:true,el:btn,why:'ready'};
+    await sleep(100); if(!RT.alive()) return {ok:false,why:'runtime-destroyed'};
   }
-  return null;
+  return {ok:false,why:'send-control-missing'};
 }
 async function confirmSend(beforeUsers, beforeComposer, beforeAssistantHash) {
   const started = now();
@@ -398,17 +406,38 @@ async function sendOnce(text, reason) {
   if (!staged.ok) {
     S.sending = false; fail('PLAY-WRITE', `Could not reliably stage the prompt (${staged.why}).`, staged); return false;
   }
-  const button = await waitForSendButton(staged.el);
+  const sendReady = await waitForSendButton(staged.el,text);
   if(!RT.alive())return false;
-  if (!button) {
-    S.sending = false; fail('PLAY-SEND', 'Prompt is staged, but the current host Send control did not become available.', { host: HOST.id }); return false;
+  if (!sendReady?.ok || !sendReady.el) {
+    S.sending = false;
+    fail('PLAY-SEND', `Prompt is staged, but the current host Send control did not become ready (${sendReady?.why||'unknown'}).`, {
+      host: HOST.id,
+      found: !!sendReady?.found,
+      mode: String(sendReady?.mode||''),
+      waitedMs: Number(sendReady?.waitedMs)||0
+    });
+    return false;
   }
   const beforeComposer = semanticText(nodeText(composer()));
   log('send-click', { reason, round: S.round + 1, host: HOST.id });
-  try { button.click(); }
-  catch (error) {
-    S.sending = false; S.uncertain = true;
-    fail('PLAY-SEND-THREW', 'Send threw after actuation. Ghost stopped to prevent a duplicate.', { message: String(error?.message || error) }); return false;
+  if(HOST.id==='chatgpt'&&window.__ghostPlusRuntime?.dom?.actuateChatgptSend){
+    const actuation=window.__ghostPlusRuntime.dom.actuateChatgptSend(text);
+    if(!actuation?.ok){
+      S.sending=false;
+      if(actuation?.attempted){
+        S.uncertain=true;
+        fail('PLAY-SEND-THREW','Send actuation threw or became uncertain. Ghost stopped to prevent a duplicate.',{why:String(actuation?.why||''),message:String(actuation?.error||'')});
+      }else{
+        fail('PLAY-SEND',`Prompt is still staged, but Send became unsafe before actuation (${actuation?.why||'unknown'}).`,{host:HOST.id});
+      }
+      return false;
+    }
+  }else{
+    try { sendReady.el.click(); }
+    catch (error) {
+      S.sending = false; S.uncertain = true;
+      fail('PLAY-SEND-THREW', 'Send threw after actuation. Ghost stopped to prevent a duplicate.', { message: String(error?.message || error) }); return false;
+    }
   }
   const confirmed = await confirmSend(beforeUsers, beforeComposer, beforeAssistantHash);
   if(!RT.alive())return false;

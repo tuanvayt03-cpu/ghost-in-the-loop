@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.17`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.18`.
 
 ## Added behavior
 
@@ -391,3 +391,14 @@ The manual diagnostic is `debug/ghost-scroll-diagnostic.user.js`. It is not incl
 - Active generation detection includes the current `#composer-submit-button[data-testid="stop-button"]` mode, semantic stop labels, and a narrowly scoped latest-turn thinking status fallback. It does not scan all page prose.
 - When an existing chat is detected but no assistant turn can be resolved safely, Play now reports that compatibility state instead of incorrectly claiming there is no task.
 - Send authority and uncertain-send invariants are unchanged: no blind resend/replay was added.
+
+
+## v0.15.18 ChatGPT send-control readiness hardening
+
+- Centralizes ChatGPT Send discovery/readiness in the owned runtime, completing the composer → turn/busy → send-control compatibility chain.
+- Separates **rendered/found** from **enabled/ready** so a temporarily disabled React Send button is no longer misclassified as missing.
+- Supports the current `#composer-submit-button` / `data-testid="send-button"` contract, exact Send/Submit labels, and a `button[type="submit"]` fallback scoped strictly to the active composer root.
+- Core waits up to 10 seconds for ChatGPT's Send control to become ready after a verified staged write. This is a bounded readiness wait, not a resend/retry loop.
+- Immediately before actuation, Ghost rechecks the staged composer text, generation state, Send identity, and enabled state. If any changed, it fails before clicking.
+- ChatGPT actuation remains exactly one `.click()`. If that actuation occurs but acceptance cannot be confirmed, the existing uncertain-send hard stop remains in force and Ghost does not resend.
+- Turn Budget now recognizes Send through the same shared runtime contract, so delayed/fallback Send controls receive the same budget injection behavior without broad page-wide button matching.

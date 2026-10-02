@@ -430,6 +430,13 @@ function domChatGptActivityState(){
       const text=domNorm(el.textContent||'');
       if((el.getAttribute?.('aria-busy')==='true')||(text&&text.length<=260&&CHATGPT_PENDING_RE.test(text)))return{busy:true,strong:false,reason:'assistant-activity'};
     }
+    let leaves=[];try{leaves=[...lastAssistant.querySelectorAll('*')].filter(el=>!el.children?.length)}catch(_){}
+    for(const el of leaves){
+      if(!domRendered(el)||el.closest?.('#gitl9,[id^="ghostplus-"]'))continue;
+      if(el.matches?.('.markdown,pre,code')||el.closest?.('.markdown,pre,code'))continue;
+      const text=domNorm(el.textContent||'');
+      if(/^(?:Thinking|Đang suy nghĩ|正在思考)(?:\.{0,3})?$/i.test(text))return{busy:true,strong:false,reason:'assistant-thinking-leaf'};
+    }
   }
   return{busy:false,strong:false,reason:'idle'};
 }

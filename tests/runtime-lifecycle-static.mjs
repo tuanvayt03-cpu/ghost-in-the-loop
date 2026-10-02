@@ -164,11 +164,14 @@ assert.match(webRecovery,/streamSendVerifyMs:\s*45000/,'stream recovery acceptan
 assert.match(webRecovery,/streamRecoveryReady/,'stream-desync recovery safety gate missing');
 assert.match(webRecovery,/lastProgressSig/,'stream progress tracking missing');
 assert.match(webRecovery,/progressSig/,'fault progress signature missing');
-assert.match(webRecovery,/const key = active \? \[error\.type \|\| 'PLAY_SEND_UNCERTAIN', hash\(error\.text \|\| status\)\]/,'fault identity must not depend on changing assistant/user text');
+assert.match(webRecovery,/const key = active \? \(error\.type \|\| \['PLAY_SEND_UNCERTAIN',hash\(status\)\]\.join\('\|'\)\) : ''/,'fault identity must remain stable across changing banner/turn text');
 assert.match(webRecovery,/chatgptFaultState/,'Web Recovery must consume the shared ChatGPT fault contract');
 assert.match(webRecovery,/chatgptActivityState/,'Web Recovery must consume the shared ChatGPT activity contract');
 assert.match(webRecovery,/STREAM_RESUME_UNAVAILABLE/,'Web Recovery must quarantine Resume stream unavailable');
 assert.match(webRecovery,/MESSAGE_DELIVERY_TIMEOUT/,'Web Recovery must quarantine message delivery timeout');
+assert.match(webRecovery,/\['STREAM_RESUME_UNAVAILABLE','MESSAGE_DELIVERY_TIMEOUT','CONNECTION_INTERRUPTED'\]/,'connection interruption must share the stream-desync quarantine');
+assert.doesNotMatch(webRecovery,/document\.body\?\.textContent/,'Web Recovery must not scan hidden page text for interruption banners');
+assert.doesNotMatch(webRecovery,/S\.faultSeenAt = 0;\s*renderWebState\(snap, 'Operator Gate đang LOCKED/,'operator gates must not erase the stream quarantine clock');
 assert.match(webRecovery,/\['SEND_TIMEOUT','CONNECTION_INTERRUPTED','STREAM_RESUME_UNAVAILABLE','MESSAGE_DELIVERY_TIMEOUT','NETWORK_ERROR','GENERATION_ERROR'\]/,'stream-desync faults must remain recoverable');
 assert.match(webRecovery,/clearManagedRecoveryDraft\(snap\)/,'verified failed recovery must clear its own staged draft');
 

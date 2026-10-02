@@ -516,7 +516,7 @@ async function domWaitChatGptSendReady(scope,options={}){
     if(expected&&domReadComposer()!==expected)return{ok:false,why:'composer-changed',found:false,ready:false};
     last=domChatGptSendState();
     if(last.ready)return{ok:true,why:'ready',found:true,ready:true,el:last.el,waitedMs:Date.now()-started};
-    const alive=await scope.sleep(100);if(!alive()){}
+    const alive=await scope.sleep(100);if(!alive)return{ok:false,why:'runtime-destroyed',found:false,ready:false};
   }
   return{ok:false,why:last.found?'send-not-ready':'send-control-missing',found:!!last.found,ready:false,mode:last.mode||'missing',waitedMs:Date.now()-started};
 }

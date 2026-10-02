@@ -423,7 +423,7 @@ This release hardens Ghost against a cluster of recent ChatGPT Web state-sync an
 - A ready Send button is no longer sufficient if ChatGPT still exposes scoped tool/status activity.
 - Core blocks a new send while a known stream-desync banner is active and ChatGPT is not clearly generating; Web Recovery owns the later reconciliation.
 - ChatGPT post-click acceptance observation is extended to 45 seconds. This does not retry or resend.
-- Web Recovery gives `Resume stream unavailable` and `Message delivery timed out` a three-minute minimum quarantine and also requires 90 seconds with no turn/tool progress before issuing any new status probe.
-- Fault identity no longer includes changing user/assistant text. A stale error banner therefore stays one recovery episode while backend progress merely extends the quarantine instead of re-arming recovery.
+- Web Recovery gives `Resume stream unavailable`, `Message delivery timed out`, and `Connection interrupted` a three-minute minimum quarantine and also requires 90 seconds with no turn/tool progress before issuing any new status probe.
+- Fault identity is keyed by fault class rather than mutable banner/user/assistant text. A stale or re-rendered banner therefore stays one recovery episode while backend progress merely extends the quarantine instead of re-arming recovery.
 - Only explicit `SEND_TIMEOUT` can qualify as evidence that a Ghost recovery Send definitely failed. Connection interruption, stream-resume failure and message-delivery timeout are no longer treated as proof that a request was not accepted.
 - Existing uncertain-send behavior remains fail-closed: once an actuation occurred without acceptance proof, Ghost does not replay it.

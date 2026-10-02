@@ -138,7 +138,9 @@ function clearComposerSafely(el){
 }
 function isChatGptSendButton(el){
   if(!(el instanceof Element)) return false;
-  try{return el.matches('#composer-submit-button,button[data-testid="send-button"],button[aria-label="Send prompt"],button[aria-label="Send message"]');}catch(_){return false;}
+  const shared=window.__ghostPlusRuntime?.dom?.isChatgptSendControl;
+  if(shared)return !!shared(el);
+  try{return el.matches('#composer-submit-button,button[data-testid="send-button"],button[aria-label="Send prompt"],button[aria-label="Send message"],button[aria-label="Send"],button[aria-label="Submit"],button[type="submit"]');}catch(_){return false;}
 }
 function augmentBeforeProgrammaticSend(){
   if(!budgetMinutes()) return false;

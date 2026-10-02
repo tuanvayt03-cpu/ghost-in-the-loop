@@ -12,6 +12,9 @@ const CFG = Object.freeze({
   verifiedFailureRetryMax: 1,
   verifiedFailureRetryDelayMs: 1500,
   interruptionSettleMs: 30000,
+  streamDesyncMinSettleMs: 180000,
+  streamDesyncQuietMs: 90000,
+  streamSendVerifyMs: 45000,
   interruptionScanMs: 3000,
   clearStableMs: 5000,
   maxFaultText: 700
@@ -33,6 +36,8 @@ const S = {
   lastInterruptScanAt: 0,
   lastInterruptText: '',
   recoveryAttempt: null,
+  lastProgressSig: '',
+  lastProgressAt: 0,
   lastFaultKey: String(GM_getValue(K.lastFaultKey, '') || ''),
   lastFaultAttemptAt: Number(GM_getValue(K.lastFaultAttemptAt, 0)) || 0
 };
@@ -139,7 +144,13 @@ function stopButtons() {
   }
   return out;
 }
-function generating() { const shared=window.__ghostPlusRuntime?.dom?.isChatgptGenerating; return shared ? !!shared() : stopButtons().length > 0; }
+function activityState(){
+  const shared=window.__ghostPlusRuntime?.dom?.chatgptActivityState;
+  if(shared){try{return shared()}catch(_){}}
+  const busy=stopButtons().length>0;
+  return{busy,strong:busy,reason:busy?'native-stop':'idle'};
+}
+function generating() { return !!activityState().busy; }
 
 function retryButtons() {
   return qa('button').filter(el => {
@@ -193,8 +204,12 @@ function interruptedBannerText(){
   return S.lastInterruptText;
 }
 function classifyErrorText(text) {
+  const shared=window.__ghostPlusRuntime?.dom?.classifyChatgptFaultText;
+  if(shared){try{const type=shared(text);if(type)return type}catch(_){}}
   const t = norm(text).toLowerCase();
   if (!t) return '';
+  if (/resume stream unavailable|stream resume unavailable/.test(t)) return 'STREAM_RESUME_UNAVAILABLE';
+  if (/message delivery timed out|timed out delivering/.test(t)) return 'MESSAGE_DELIVERY_TIMEOUT';
   if (/connection interrupted|kết nối bị gián đoạn|đang chờ câu trả lời hoàn chỉnh|waiting for (?:a |the )?complete response/.test(t)) return 'CONNECTION_INTERRUPTED';
   if (/timed out waiting to send|timeout.*send|send.*timed out|hết thời gian chờ gửi|chờ gửi tin nhắn.*quá|đã hết thời gian chờ gửi/.test(t)) return 'SEND_TIMEOUT';
   if (/rate limit|too many requests|quá nhiều yêu cầu|429\b/.test(t)) return 'RATE_LIMIT';
@@ -204,6 +219,13 @@ function classifyErrorText(text) {
   return '';
 }
 function scanWebError() {
+  const shared=window.__ghostPlusRuntime?.dom?.chatgptFaultState;
+  if(shared){
+    try{
+      const fault=shared();
+      if(fault?.type)return fault;
+    }catch(_){}
+  }
   const candidates = errorCandidateTexts();
   for (const text of candidates) {
     const type = classifyErrorText(text);
@@ -215,13 +237,14 @@ function scanWebError() {
   }
   return { type: '', text: '', retryVisible: retryButtons().length > 0 };
 }
+
 function recoveryAttemptOwned(snap,attempt=S.recoveryAttempt){
   if(!attempt||!snap)return false;
   const source=snap?.error?.type||'PLAY_SEND_UNCERTAIN';
   return attempt.faultKey===snap.key &&
     attempt.source===source &&
     attempt.promptHash===hash(norm(attempt.prompt||'')) &&
-    now()-attempt.stagedAt<=Math.max(60000,CFG.sendVerifyMs*4);
+    now()-attempt.stagedAt<=Math.max(240000,CFG.streamSendVerifyMs*4);
 }
 function beginRecoveryAttempt(prompt,snap,beforeUsers,beforeAssistants){
   const attempt={
@@ -248,7 +271,7 @@ function managedRecoveryDraft(value,snap,attempt=S.recoveryAttempt){
 function verifiedFailedSend(snap,{beforeUsers,beforeAssistants,attempt=S.recoveryAttempt}={}){
   const error=scanWebError();
   const draft=composerText();
-  const explicitFailureType=['SEND_TIMEOUT','CONNECTION_INTERRUPTED'].includes(error.type);
+  const explicitFailureType=error.type==='SEND_TIMEOUT';
   const evidence={
     explicitFailureType,
     notGenerating:!generating(),
@@ -300,21 +323,40 @@ function explicitFailureExhausted(snap,verdict){
   notice('Ghost+ web supervisor',msg);
 }
 
+function isStreamDesyncType(type){
+  return ['STREAM_RESUME_UNAVAILABLE','MESSAGE_DELIVERY_TIMEOUT'].includes(String(type||''));
+}
 function faultSnapshot() {
   const error = scanWebError();
   const status = ghostStatus();
   const pausedUncertain = ghostPaused() && ghostUncertain();
-  const recoverableType = ['SEND_TIMEOUT','CONNECTION_INTERRUPTED','NETWORK_ERROR','GENERATION_ERROR'].includes(error.type);
+  const recoverableType = ['SEND_TIMEOUT','CONNECTION_INTERRUPTED','STREAM_RESUME_UNAVAILABLE','MESSAGE_DELIVERY_TIMEOUT','NETWORK_ERROR','GENERATION_ERROR'].includes(error.type);
   const blockedType = ['RATE_LIMIT','AUTH_ERROR'].includes(error.type);
   const explicitWebError = !!error.type;
-  // Web errors are page state, not Ghost-core state. A visible explicit error must be surfaced
-  // even while the core still says RUNNING. sendRecoveryProbe() separately refuses to act
-  // while ChatGPT is genuinely generating, so stale banners cannot cause a duplicate send.
   const active = pausedUncertain || explicitWebError;
-  const userText = latestText(users());
-  const assistantText = latestText(assistants());
-  const key = active ? [error.type || 'PLAY_SEND_UNCERTAIN', hash(error.text || status), hash(userText), hash(assistantText)].join('|') : '';
-  return { active, explicitWebError, pausedUncertain, recoverableType, blockedType, error, status, key, generating: generating() };
+  const userCount=users().length;
+  const assistantNodes=assistants();
+  const assistantCount=assistantNodes.length;
+  const assistantText=latestText(assistantNodes);
+  const activity=activityState();
+  // Fault identity must be independent from turn progress. Otherwise a stale banner plus a
+  // changing assistant response becomes a fresh episode and can re-arm recovery repeatedly.
+  const key = active ? [error.type || 'PLAY_SEND_UNCERTAIN', hash(error.text || status)].join('|') : '';
+  const progressSig=[userCount,assistantCount,hash(assistantText),activity.busy?activity.reason:'idle'].join('|');
+  return {
+    active, explicitWebError, pausedUncertain, recoverableType, blockedType,
+    error, status, key, generating: activity.busy, activity,
+    userCount, assistantCount, assistantText, progressSig,
+    streamDesync:isStreamDesyncType(error.type)
+  };
+}
+function streamRecoveryReady(snap){
+  if(!snap?.streamDesync)return{ready:true,waitMs:0,quietMs:0};
+  const age=Math.max(0,now()-S.faultSeenAt);
+  const quiet=Math.max(0,now()-(S.lastProgressAt||S.faultSeenAt||now()));
+  const waitMs=Math.max(0,CFG.streamDesyncMinSettleMs-age);
+  const quietMs=Math.max(0,CFG.streamDesyncQuietMs-quiet);
+  return{ready:!snap.generating&&waitMs===0&&quietMs===0,waitMs,quietMs};
 }
 
 function ensureUi() {
@@ -436,6 +478,13 @@ async function sendRecoveryProbe(snap) {
     S.attemptedThisEpisode = true;
     return;
   }
+  if(snap.streamDesync){
+    const guard=streamRecoveryReady(snap);
+    if(!guard.ready){
+      renderWebState(snap,`${snap.error.type} · quarantine stream desync; chờ backend/UI hội tụ trước khi gửi mới.`);
+      return;
+    }
+  }
   if (snap.generating) {
     renderWebState(snap, `${snap.error.type||'WEB_ERROR'} đã detect nhưng ChatGPT vẫn đang generating; chỉ theo dõi, chưa recovery.`);
     return;
@@ -477,9 +526,10 @@ async function sendRecoveryProbe(snap) {
     return;
   }
 
+  const verifyMs=snap.streamDesync?CFG.streamSendVerifyMs:CFG.sendVerifyMs;
   let accepted = await wait(
     () => generating() || users().length > beforeUsers || assistants().length > beforeAssistants,
-    CFG.sendVerifyMs
+    verifyMs
   );
   if(!RT.alive()){S.recovering=false;return}
 
@@ -527,7 +577,7 @@ async function sendRecoveryProbe(snap) {
       }
       accepted=await wait(
         () => generating() || users().length > beforeUsers || assistants().length > beforeAssistants,
-        CFG.sendVerifyMs
+        verifyMs
       );
       if(!RT.alive()){S.recovering=false;return}
       if(!accepted){
@@ -569,6 +619,12 @@ function sample() {
   ensureUi();
   const snap = faultSnapshot();
   renderWebState(snap);
+
+  if(snap.active&&snap.progressSig&&snap.progressSig!==S.lastProgressSig){
+    S.lastProgressSig=snap.progressSig;
+    S.lastProgressAt=now();
+  }
+
   if (operatorLocked()) {
     S.recovering = false;
     S.faultSeenAt = 0;
@@ -579,7 +635,9 @@ function sample() {
   if (!snap.active) {
     if (!S.clearSince) S.clearSince = now();
     if (now() - S.clearSince >= CFG.clearStableMs) {
-      S.faultKey = ''; S.faultSeenAt = 0; S.attemptedThisEpisode = false; S.verifiedFailureRetries = 0; S.recoveryAttempt=null;
+      S.faultKey = ''; S.faultSeenAt = 0; S.attemptedThisEpisode = false;
+      S.verifiedFailureRetries = 0; S.recoveryAttempt=null;
+      S.lastProgressSig='';S.lastProgressAt=0;
     }
     return;
   }
@@ -591,11 +649,25 @@ function sample() {
     S.attemptedThisEpisode = false;
     S.verifiedFailureRetries = 0;
     S.recoveryAttempt=null;
+    S.lastProgressSig=snap.progressSig||'';
+    S.lastProgressAt=now();
   }
 
   if (snap.blockedType) {
     if (!S.attemptedThisEpisode) sendRecoveryProbe(snap).catch(() => {});
     return;
+  }
+
+  if(snap.streamDesync){
+    const guard=streamRecoveryReady(snap);
+    if(!guard.ready){
+      const waitSec=Math.ceil(guard.waitMs/1000),quietSec=Math.ceil(guard.quietMs/1000);
+      const reason=snap.generating
+        ?`${snap.error.type} · vẫn có activity (${snap.activity?.reason||'busy'}); không gửi mới.`
+        :`${snap.error.type} · quarantine; còn tối thiểu ${waitSec}s và cần ${quietSec}s không có progress trước recovery.`;
+      renderWebState(snap,reason);
+      return;
+    }
   }
 
   const settleMs=snap.error.type==='CONNECTION_INTERRUPTED'?CFG.interruptionSettleMs:CFG.settleMs;

@@ -227,3 +227,97 @@ test('actuation fails closed if the staged composer changed and clicks exactly o
   expect(rt.dom.actuateChatgptSend('continue task')).toMatchObject({ok:true,attempted:true,why:'clicked'});
   expect(clicks).toBe(1);
 });
+
+
+test('falls back to data-turn roles when conversation articles and legacy author roles are absent',()=>{
+  document.body.innerHTML=`
+    <main>
+      <div data-turn="user">keep going</div>
+      <div data-turn="assistant"><div class="markdown">checkpoint reached
+[[GITL::PROCEED]]</div></div>
+    </main>
+  `;
+  document.querySelectorAll('[data-turn]').forEach(el=>show(el,{top:220}));
+  const rt=boot();
+  const turns=rt.dom.chatgptTurns();
+  expect(turns.map(x=>x.role)).toEqual(['user','assistant']);
+  expect(rt.dom.latestChatgptAssistantText()).toContain('[[GITL::PROCEED]]');
+});
+
+test('treats scoped tool/status activity as busy even when the native Stop control is missing',()=>{
+  document.body.innerHTML=`
+    <main>
+      <div role="status">Searching the web</div>
+      <form data-type="unified-composer">
+        <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT"></div>
+        <button id="composer-submit-button" data-testid="send-button" aria-label="Send prompt"></button>
+      </form>
+    </main>
+  `;
+  show(document.querySelector('[role="status"]'),{top:300,width:180,height:20});
+  show(document.getElementById('prompt-textarea'));
+  show(document.getElementById('composer-submit-button'),{width:36,height:36});
+  const rt=boot();
+  const activity=rt.dom.chatgptActivityState();
+  expect(activity.busy).toBe(true);
+  expect(activity.strong).toBe(false);
+  expect(rt.dom.isChatgptGenerating()).toBe(true);
+  expect(rt.dom.actuateChatgptSend('')).toMatchObject({ok:false,attempted:false,why:'generation-active'});
+});
+
+test('does not infer busy from ordinary assistant prose that merely says working',()=>{
+  document.body.innerHTML=`
+    <main>
+      <div data-message-author-role="assistant"><div class="markdown">I am working with a historical dataset in this explanation.</div></div>
+      <form data-type="unified-composer">
+        <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT"></div>
+      </form>
+    </main>
+  `;
+  show(document.querySelector('[data-message-author-role="assistant"]'),{top:220});
+  show(document.getElementById('prompt-textarea'));
+  const rt=boot();
+  expect(rt.dom.chatgptActivityState()).toMatchObject({busy:false});
+});
+
+test('classifies recent ChatGPT stream-resume and delivery-timeout faults explicitly',()=>{
+  const rt=boot();
+  expect(rt.dom.classifyChatgptFaultText('Resume stream unavailable')).toBe('STREAM_RESUME_UNAVAILABLE');
+  expect(rt.dom.classifyChatgptFaultText('Message delivery timed out. Please try again.')).toBe('MESSAGE_DELIVERY_TIMEOUT');
+  expect(rt.dom.classifyChatgptFaultText('Connection interrupted. Waiting for a complete response')).toBe('CONNECTION_INTERRUPTED');
+  expect(rt.dom.classifyChatgptFaultText('Timed out waiting to send')).toBe('SEND_TIMEOUT');
+});
+
+test('finds Resume stream unavailable through the bounded page-text fallback',()=>{
+  document.body.innerHTML=`
+    <main>
+      <div>Resume stream unavailable</div>
+      <form data-type="unified-composer">
+        <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT"></div>
+      </form>
+    </main>
+  `;
+  show(document.getElementById('prompt-textarea'));
+  const rt=boot();
+  expect(rt.dom.chatgptFaultState()).toMatchObject({type:'STREAM_RESUME_UNAVAILABLE'});
+});
+
+test('send readiness stays blocked while inferred ChatGPT activity is still present',async()=>{
+  document.body.innerHTML=`
+    <main>
+      <div role="status">Analyzing results</div>
+      <form data-type="unified-composer">
+        <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT">continue task</div>
+        <button id="composer-submit-button" data-testid="send-button" aria-label="Send prompt"></button>
+      </form>
+    </main>
+  `;
+  const status=show(document.querySelector('[role="status"]'),{top:300,width:150,height:20});
+  show(document.getElementById('prompt-textarea'));
+  show(document.getElementById('composer-submit-button'),{width:36,height:36});
+  const rt=boot(),scope=rt.module('activity-send-test');
+  setTimeout(()=>{status.textContent='';status.style.display='none'},240);
+  const result=await rt.dom.waitChatgptSendReady(scope,{expectedText:'continue task',timeoutMs:1000});
+  expect(result.ok).toBe(true);
+  expect(result.waitedMs).toBeGreaterThanOrEqual(150);
+});

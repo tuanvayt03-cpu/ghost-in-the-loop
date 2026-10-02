@@ -291,12 +291,13 @@ test('classifies recent ChatGPT stream-resume and delivery-timeout faults explic
 test('finds Resume stream unavailable through the bounded page-text fallback',()=>{
   document.body.innerHTML=`
     <main>
-      <div>Resume stream unavailable</div>
+      <div data-stream-error>Resume stream unavailable</div>
       <form data-type="unified-composer">
         <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT"></div>
       </form>
     </main>
   `;
+  show(document.querySelector('[data-stream-error]'),{top:220,width:260,height:24});
   show(document.getElementById('prompt-textarea'));
   const rt=boot();
   expect(rt.dom.chatgptFaultState()).toMatchObject({type:'STREAM_RESUME_UNAVAILABLE'});

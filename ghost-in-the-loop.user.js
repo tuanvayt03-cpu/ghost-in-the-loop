@@ -42,6 +42,7 @@ const WRITE_VERIFY_MS = 1800;
 const SEND_WAIT_MS = 2200;
 const CHATGPT_SEND_WAIT_MS = 10000;
 const SEND_CONFIRM_MS = 16000;
+const CHATGPT_SEND_CONFIRM_MS = 45000;
 const CONTINUITY_KEY = 'ghostplus.continuityLeaseStartedAt';
 
 const G = Object.freeze({
@@ -196,6 +197,14 @@ function generating() {
     if (shared) return !!shared();
   }
   return !!queryFirst(HOST.stop);
+}
+function chatgptFault(){
+  if(HOST.id!=='chatgpt')return{type:'',text:''};
+  try{return window.__ghostPlusRuntime?.dom?.chatgptFaultState?.()||{type:'',text:''}}catch(_){return{type:'',text:''}}
+}
+function streamFaultBlocksNewSend(){
+  const type=chatgptFault().type;
+  return ['STREAM_RESUME_UNAVAILABLE','MESSAGE_DELIVERY_TIMEOUT','CONNECTION_INTERRUPTED'].includes(type)?type:'';
 }
 function hash(value) {
   const s = String(value || ''); let h = 2166136261;
@@ -384,7 +393,8 @@ async function waitForSendButton(el, expectedText='') {
 }
 async function confirmSend(beforeUsers, beforeComposer, beforeAssistantHash) {
   const started = now();
-  while (now() - started < SEND_CONFIRM_MS) {
+  const confirmMs=HOST.id==='chatgpt'?CHATGPT_SEND_CONFIRM_MS:SEND_CONFIRM_MS;
+  while (now() - started < confirmMs) {
     if (generating()) return { ok: true, why: 'generation-started' };
     if (userCount() > beforeUsers) return { ok: true, why: 'new-user-turn' };
     const el = composer();
@@ -532,6 +542,11 @@ async function play() {
   if (S.uncertain) { S.detail = 'Prior Send is uncertain. Inspect the chat or use Page Reload before resuming.'; render(); return; }
   const input = composer();
   if (!input) { fail('PLAY-INPUT', 'Current chat composer was not found.', { host: HOST.id }); return; }
+  const streamFault=streamFaultBlocksNewSend();
+  if(streamFault&&!generating()){
+    pause(`ChatGPT stream state is desynchronized (${streamFault}); Web Recovery will observe before any new send.`);
+    return;
+  }
   S.mode = 'RUNNING'; S.detail = 'Starting...'; S.lastHandled = ''; S.stableHash = ''; S.stableSince = 0; S.drift = 0; S.relay = ''; render();
   const draft = nodeText(input); const latest = assistantText(); const parsed = terminal(latest);
   if (generating()) {

@@ -212,7 +212,7 @@ test('actuation fails closed if the staged composer changed and clicks exactly o
     <main>
       <form data-type="unified-composer">
         <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT">continue task</div>
-        <button id="composer-submit-button" data-testid="send-button" aria-label="Send prompt"></button>
+        <button type="button" id="composer-submit-button" data-testid="send-button" aria-label="Send prompt"></button>
       </form>
     </main>
   `;

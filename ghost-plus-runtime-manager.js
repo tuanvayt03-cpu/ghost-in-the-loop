@@ -2,7 +2,7 @@
 'use strict';
 
 const ROOT='__ghostPlusRuntime';
-const VERSION='0.15.18';
+const VERSION='0.15.19';
 const previous=window[ROOT];
 try { if(previous?.active && typeof previous.destroy==='function') previous.destroy('reinject'); } catch (_) {}
 
@@ -334,7 +334,7 @@ async function stageComposerText(text,scope,options={}){
 const CHATGPT_TURN_SELECTOR='article[data-testid*="conversation-turn"]';
 function domChatGptRole(node){
   if(!node)return'';
-  const attr=String(node.getAttribute?.('data-message-author-role')||node.getAttribute?.('data-author')||'');
+  const attr=String(node.getAttribute?.('data-message-author-role')||node.getAttribute?.('data-author')||node.getAttribute?.('data-turn')||'');
   if(/assistant/i.test(attr))return'assistant';
   if(/user/i.test(attr))return'user';
   const testid=String(node.getAttribute?.('data-testid')||'');
@@ -364,7 +364,7 @@ function domChatGptTurns(){
   let nodes=[];
   try{nodes=[...document.querySelectorAll(CHATGPT_TURN_SELECTOR)].filter(x=>x.isConnected)}catch(_){}
   if(!nodes.length){
-    try{nodes=[...document.querySelectorAll('[data-message-author-role],[data-author]')].filter(x=>x.isConnected)}catch(_){}
+    try{nodes=[...document.querySelectorAll('[data-message-author-role],[data-author],[data-turn="user"],[data-turn="assistant"]')].filter(x=>x.isConnected)}catch(_){}
   }
   const rows=[];
   for(const el of nodes){
@@ -379,39 +379,119 @@ function domLatestChatGptAssistantText(){
   return rows.length?rows[rows.length-1].text:'';
 }
 function domChatGptUserCount(){return domChatGptTurns().filter(x=>x.role==='user').length}
-function domIsChatGptGenerating(){
-  if(!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname))return false;
-  const selectors=[
+const CHATGPT_PENDING_RE=/(đang\s+(suy nghĩ|truy vấn|tìm|phân tích|xử lý|tải|chạy|gọi|thực thi|duyệt))|\b(thinking|searching|querying|analyzing|processing|working|running|retrieving|calling\s+(a\s+)?tool|using\s+(a\s+)?tool|browsing|fetching|resuming)\b/i;
+function domChatGptActivityState(){
+  if(!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname))return{busy:false,strong:false,reason:'unsupported-host'};
+  const strongSelectors=[
     '#composer-submit-button[data-testid="stop-button"]',
     'button[data-testid="stop-button"]',
     'button[aria-label="Stop generating"]',
     'button[aria-label="Stop streaming"]',
     'button[aria-label="Stop responding"]'
   ];
-  for(const selector of selectors){
+  for(const selector of strongSelectors){
     let nodes=[];try{nodes=[...document.querySelectorAll(selector)]}catch(_){}
-    if(nodes.some(el=>domVisible(el)&&!el.closest?.('#gitl9,[id^="ghostplus-"]')))return true;
+    if(nodes.some(el=>domVisible(el)&&!el.closest?.('#gitl9,[id^="ghostplus-"]')))return{busy:true,strong:true,reason:'native-stop'};
   }
   let controls=[];try{controls=[...document.querySelectorAll('button,[role="button"],[aria-label]')]}catch(_){}
   for(const control of controls){
     if(!domVisible(control)||control.closest?.('#gitl9,[id^="ghostplus-"]'))continue;
     const label=String(control.getAttribute?.('aria-label')||'');
-    if(/Stop generating|Stop streaming|Stop responding|停止生成|正在思考/i.test(label))return true;
+    if(/Stop generating|Stop streaming|Stop responding|停止生成|正在思考/i.test(label))return{busy:true,strong:true,reason:'semantic-stop'};
   }
-  const turns=domChatGptTurns();
-  const last=turns[turns.length-1]?.el;
-  if(last){
-    let leaves=[];try{leaves=[last,...last.querySelectorAll('*')]}catch(_){leaves=[last]}
-    for(const el of leaves){
-      if(el.children?.length)continue;
-      if(el.closest?.('.markdown,pre,code'))continue;
+
+  const scopedStatusSelectors=[
+    'main [role="status"]','main [aria-live="polite"]','main [aria-live="assertive"]',
+    'main [data-testid*="thinking" i]','main [data-testid*="loading" i]','main [data-testid*="status" i]'
+  ];
+  for(const selector of scopedStatusSelectors){
+    let nodes=[];try{nodes=[...document.querySelectorAll(selector)]}catch(_){}
+    for(const el of nodes){
+      if(!domRendered(el)||el.closest?.('#gitl9,[id^="ghostplus-"]'))continue;
       const text=domNorm(el.textContent||'');
-      if(text&&text.length<=40&&/^(?:Thinking|正在思考|停止生成)(?:\.*)?$/i.test(text))return true;
+      if(text&&text.length<=260&&CHATGPT_PENDING_RE.test(text))return{busy:true,strong:false,reason:'status:'+text.slice(0,80)};
     }
   }
-  return false;
-}
 
+  const busySelectors=['main [aria-busy="true"]','form [aria-busy="true"]','main [role="progressbar"]','main [data-testid*="spinner" i]','main [class*="animate-spin" i]'];
+  for(const selector of busySelectors){
+    let nodes=[];try{nodes=[...document.querySelectorAll(selector)]}catch(_){}
+    if(nodes.some(el=>domRendered(el)&&!el.closest?.('#gitl9,[id^="ghostplus-"]')))return{busy:true,strong:false,reason:'progress-indicator'};
+  }
+
+  const turns=domChatGptTurns();
+  const lastAssistant=[...turns].reverse().find(x=>x.role==='assistant')?.el||null;
+  if(lastAssistant){
+    let nodes=[];try{nodes=[lastAssistant,...lastAssistant.querySelectorAll('[role="status"],[aria-live],[aria-busy="true"],[data-testid*="tool" i],[data-testid*="thinking" i],[data-testid*="loading" i],details')]}catch(_){nodes=[lastAssistant]}
+    for(const el of nodes){
+      if(!domRendered(el)||el.closest?.('#gitl9,[id^="ghostplus-"]'))continue;
+      if(el.matches?.('.markdown,pre,code')||el.closest?.('.markdown,pre,code'))continue;
+      const text=domNorm(el.textContent||'');
+      if((el.getAttribute?.('aria-busy')==='true')||(text&&text.length<=260&&CHATGPT_PENDING_RE.test(text)))return{busy:true,strong:false,reason:'assistant-activity'};
+    }
+  }
+  return{busy:false,strong:false,reason:'idle'};
+}
+function domIsChatGptGenerating(){return !!domChatGptActivityState().busy}
+
+function domClassifyChatGptFaultText(text){
+  const t=domNorm(text).toLowerCase();
+  if(!t)return'';
+  if(/resume stream unavailable|stream resume unavailable|không thể.*(?:resume|tiếp tục).*(?:stream|luồng)/i.test(t))return'STREAM_RESUME_UNAVAILABLE';
+  if(/message delivery timed out|delivery timed out.*try again|timed out delivering|hết thời gian.*(?:phân phối|giao).*tin nhắn/i.test(t))return'MESSAGE_DELIVERY_TIMEOUT';
+  if(/connection interrupted|kết nối bị gián đoạn|đang chờ câu trả lời hoàn chỉnh|waiting for (?:a |the )?complete response/.test(t))return'CONNECTION_INTERRUPTED';
+  if(/timed out waiting to send|timeout.*send|send.*timed out|hết thời gian chờ gửi|chờ gửi tin nhắn.*quá|đã hết thời gian chờ gửi/.test(t))return'SEND_TIMEOUT';
+  if(/rate limit|too many requests|quá nhiều yêu cầu|429\b/.test(t))return'RATE_LIMIT';
+  if(/session expired|authentication|unauthorized|sign in again|đăng nhập lại|phiên.*hết hạn|xác thực/.test(t))return'AUTH_ERROR';
+  if(/network error|network connection|connection error|lỗi mạng|mất kết nối|kết nối mạng/.test(t))return'NETWORK_ERROR';
+  if(/something went wrong|error generating|generation error|đã xảy ra lỗi|có lỗi xảy ra|không thể tạo phản hồi/.test(t))return'GENERATION_ERROR';
+  return'';
+}
+function domChatGptRetryButtons(){
+  let buttons=[];try{buttons=[...document.querySelectorAll('button')]}catch(_){}
+  return buttons.filter(el=>{
+    if(!domRendered(el)||el.closest?.('#gitl9,[id^="ghostplus-"]'))return false;
+    const t=domNorm(el.textContent||el.getAttribute?.('aria-label')||'');
+    return /^(retry|try again|thử lại|thử lần nữa)$/i.test(t)||/retry|try again|thử lại/i.test(t);
+  });
+}
+let domFaultFallbackAt=0,domFaultFallbackText='';
+function domChatGptFaultFallbackText(){
+  const now=Date.now();
+  if(now-domFaultFallbackAt<3000)return domFaultFallbackText;
+  domFaultFallbackAt=now;domFaultFallbackText='';
+  let raw='';try{raw=String(document.body?.textContent||'')}catch(_){}
+  const patterns=[
+    /resume stream unavailable/i,
+    /message delivery timed out(?:\.\s*please try again)?/i,
+    /connection interrupted(?:\.|:)?\s*(?:waiting for (?:a |the )?complete response)?/i,
+    /kết nối bị gián đoạn(?:\.|:)?\s*(?:đang chờ câu trả lời hoàn chỉnh)?/i,
+    /a network error occurred(?:\.|:)?\s*(?:please check your connection and try again)?/i
+  ];
+  for(const re of patterns){const m=raw.match(re);if(m){domFaultFallbackText=domNorm(m[0]);break}}
+  return domFaultFallbackText;
+}
+function domChatGptFaultState(){
+  if(!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname))return{type:'',text:'',retryVisible:false};
+  const candidates=[],seen=new Set(),add=value=>{const t=domNorm(value);if(!t||t.length>900||seen.has(t))return;seen.add(t);candidates.push(t)};
+  const selectors=['[role="alert"]','[role="status"]','[aria-live="assertive"]','[aria-live="polite"]','[data-testid*="error" i]','[data-testid*="toast" i]','[class*="error" i]'];
+  for(const selector of selectors){
+    let nodes=[];try{nodes=[...document.querySelectorAll(selector)]}catch(_){}
+    for(const el of nodes)if(domRendered(el)&&!el.closest?.('#gitl9,[id^="ghostplus-"]'))add(el.textContent||'');
+  }
+  const retry=domChatGptRetryButtons();
+  for(const btn of retry){
+    add(btn.textContent||btn.getAttribute?.('aria-label')||'');
+    let node=btn.parentElement;
+    for(let depth=0;node&&depth<4;depth++,node=node.parentElement)add(node.textContent||'');
+  }
+  add(domChatGptFaultFallbackText());
+  for(const text of candidates){
+    const type=domClassifyChatGptFaultText(text);
+    if(type)return{type,text,retryVisible:retry.length>0};
+  }
+  return{type:'',text:'',retryVisible:retry.length>0};
+}
 
 function domRendered(el){
   if(!el||!el.isConnected||el.getAttribute?.('aria-hidden')==='true'||el.hidden)return false;
@@ -515,7 +595,9 @@ async function domWaitChatGptSendReady(scope,options={}){
     if(!scope.alive())return{ok:false,why:'runtime-destroyed',found:false,ready:false};
     if(expected&&domReadComposer()!==expected)return{ok:false,why:'composer-changed',found:false,ready:false};
     last=domChatGptSendState();
-    if(last.ready)return{ok:true,why:'ready',found:true,ready:true,el:last.el,waitedMs:Date.now()-started};
+    const activity=domChatGptActivityState();
+    if(last.ready&&!activity.busy)return{ok:true,why:'ready',found:true,ready:true,el:last.el,waitedMs:Date.now()-started};
+    if(activity.busy)last={...last,ready:false,why:'generation-active',activityReason:activity.reason};
     const alive=await scope.sleep(100);if(!alive)return{ok:false,why:'runtime-destroyed',found:false,ready:false};
   }
   return{ok:false,why:last.found?'send-not-ready':'send-control-missing',found:!!last.found,ready:false,mode:last.mode||'missing',waitedMs:Date.now()-started};
@@ -523,7 +605,8 @@ async function domWaitChatGptSendReady(scope,options={}){
 function domActuateChatGptSend(expectedText=''){
   const expected=domNorm(expectedText);
   if(expected&&domReadComposer()!==expected)return{ok:false,attempted:false,why:'composer-changed'};
-  if(domIsChatGptGenerating())return{ok:false,attempted:false,why:'generation-active'};
+  const activity=domChatGptActivityState();
+  if(activity.busy)return{ok:false,attempted:false,why:'generation-active',activityReason:activity.reason};
   const state=domChatGptSendState();
   if(!state.ready||!state.el)return{ok:false,attempted:false,why:state.why||'send-not-ready'};
   if(!domIsChatGptSendControl(state.el))return{ok:false,attempted:false,why:'send-control-identity-lost'};
@@ -538,7 +621,10 @@ const dom=Object.freeze({
   chatgptTurns:domChatGptTurns,
   latestChatgptAssistantText:domLatestChatGptAssistantText,
   chatgptUserCount:domChatGptUserCount,
+  chatgptActivityState:domChatGptActivityState,
   isChatgptGenerating:domIsChatGptGenerating,
+  classifyChatgptFaultText:domClassifyChatGptFaultText,
+  chatgptFaultState:domChatGptFaultState,
   chatgptSendState:domChatGptSendState,
   waitChatgptSendReady:domWaitChatGptSendReady,
   actuateChatgptSend:domActuateChatGptSend,

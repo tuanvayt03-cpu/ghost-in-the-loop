@@ -422,7 +422,8 @@ function domChatGptActivityState(){
   const turns=domChatGptTurns();
   const lastAssistant=[...turns].reverse().find(x=>x.role==='assistant')?.el||null;
   if(lastAssistant){
-    let nodes=[];try{nodes=[lastAssistant,...lastAssistant.querySelectorAll('[role="status"],[aria-live],[aria-busy="true"],[data-testid*="tool" i],[data-testid*="thinking" i],[data-testid*="loading" i],details')]}catch(_){nodes=[lastAssistant]}
+    if(lastAssistant.getAttribute?.('aria-busy')==='true'&&domRendered(lastAssistant))return{busy:true,strong:false,reason:'assistant-aria-busy'};
+    let nodes=[];try{nodes=[...lastAssistant.querySelectorAll('[role="status"],[aria-live],[aria-busy="true"],[data-testid*="tool" i],[data-testid*="thinking" i],[data-testid*="loading" i],details')]}catch(_){}
     for(const el of nodes){
       if(!domRendered(el)||el.closest?.('#gitl9,[id^="ghostplus-"]'))continue;
       if(el.matches?.('.markdown,pre,code')||el.closest?.('.markdown,pre,code'))continue;

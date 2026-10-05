@@ -438,6 +438,6 @@ This release removes idle-tab Telegram spam from the BUSY watchdog.
 - A continuous stall episode emits at most one warning. New meaningful turn/tool/status progress re-arms one future warning; elapsed time alone cannot repeat the same alert every ten minutes.
 - Watchdog stall events carry explicit run-scoped metadata (`runScoped`, `runId`, `ghostRunning`).
 - Alert Router refuses unscoped STALL_WARNING desktop notifications.
-- Telegram independently refuses STALL_WARNING without positive active-run evidence and purges legacy queued stall events that predate this contract, preventing an old outbox from replaying spam after upgrade.
+- Telegram independently refuses STALL_WARNING without positive active-run evidence, purges legacy queued stall events, and drops queued stall alerts as soon as Ghost is no longer RUNNING, preventing an old outbox from replaying spam after upgrade or after a job finishes.
 - COMPLETE remains a local desktop popup by default and is deduplicated with a six-hour same-page window. Telegram completion remains opt-in through the existing `complete` checkbox.
 - HUMAN / RELAY / CONTEXT / AUTH / RECOVERY alerts are unchanged.

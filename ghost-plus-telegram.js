@@ -22,6 +22,7 @@ const token=()=>n(get(K.t,''));
 const dest=()=>n(get(K.c,''));
 const thread=()=>{const v=Number(get(K.h,0));return Number.isInteger(v)&&v>0?v:0};
 const enabled=()=>get(K.e,false)===true;
+const ghostRunningNow=()=>/^RUNNING\b/i.test(n(q('#gitl9 .status')?.textContent||''));
 const scopePath=()=>String(location.pathname||'/').split(/[?#]/)[0];
 const scoped=k=>k+':'+encodeURIComponent(scopePath());
 function json(k){try{const v=get(k,'{}');return typeof v==='object'?(v||{}):JSON.parse(String(v||'{}'))}catch(_){return{}}}
@@ -82,7 +83,7 @@ function queueEvent(k,e,rem=false){
 }
 function validQueuedEvent(e){
   if(!e)return false;
-  if(e.type==='STALL_WARNING')return e.runScoped===true&&!!n(e.runId);
+  if(e.type==='STALL_WARNING')return e.runScoped===true&&!!n(e.runId)&&ghostRunningNow();
   return true
 }
 function pruneOutbox(){

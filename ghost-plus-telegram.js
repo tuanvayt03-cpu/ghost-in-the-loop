@@ -54,7 +54,8 @@ function cleanEvent(e){
     group:n(e?.group||'general').slice(0,40),title:n(e?.title||'Ghost+').slice(0,160),
     text:n(e?.text||'').slice(0,600),reason:n(e?.reason||'').slice(0,600),
     chat:n(e?.chat||'ChatGPT').slice(0,120),path:n(e?.path||location.pathname).slice(0,240),
-    episodeId:n(e?.episodeId||'').slice(0,120),source:n(e?.source||'structured').slice(0,40),at:Number(e?.at)||now()
+    episodeId:n(e?.episodeId||'').slice(0,120),source:n(e?.source||'structured').slice(0,40),at:Number(e?.at)||now(),
+    runScoped:e?.data?.runScoped===true,runId:n(e?.data?.runId||'').slice(0,120)
   }
 }
 function ttlFor(e){
@@ -79,10 +80,15 @@ function queueEvent(k,e,rem=false){
   const rec={key:k,event:cleanEvent(e),rem:!!rem,target,createdAt,expiresAt:createdAt+ttlFor(e),attempts:0,nextAt:createdAt,exhausted:false};
   box[k]=rec;saveOutbox(box);return rec
 }
+function validQueuedEvent(e){
+  if(!e)return false;
+  if(e.type==='STALL_WARNING')return e.runScoped===true&&!!n(e.runId);
+  return true
+}
 function pruneOutbox(){
   const box=outbox(),tk=targetKey();let changed=false;
   for(const [k,r] of Object.entries(box)){
-    if(!r||Number(r.expiresAt||0)<=now()||targetKey(r.target)!==tk||sent(k)){delete box[k];changed=true}
+    if(!r||!validQueuedEvent(r.event)||Number(r.expiresAt||0)<=now()||targetKey(r.target)!==tk||sent(k)){delete box[k];changed=true}
   }
   if(changed)saveOutbox(box)
 }
@@ -137,7 +143,7 @@ function should(e){
   if(e?.source==='legacy')return false;
   if(!enabled()||!token()||!dest())return false;
   if(['HUMAN_REQUIRED','MODEL_RELAY','CONTEXT_BOUNDARY','AUTH_ERROR','RECOVERY_EXHAUSTED','RATE_LIMIT','CORE_BLOCKED'].includes(e.type))return true;
-  if(e.type==='STALL_WARNING')return get(K.s,true)!==false;
+  if(e.type==='STALL_WARNING')return e?.data?.runScoped===true&&!!n(e?.data?.runId)&&e?.data?.ghostRunning===true&&get(K.s,true)!==false;
   if(e.type==='COMPLETE')return get(K.f,false)===true;
   return false
 }
@@ -156,7 +162,7 @@ function attemptQueued(k,force=false){
   if(sendPending.has(k))return Promise.resolve(false);
   const rec=outbox()[k];
   if(!rec)return Promise.resolve(false);
-  if(Number(rec.expiresAt||0)<=now()||targetKey(rec.target)!==targetKey()){dropQueued(k);return Promise.resolve(false)}
+  if(!validQueuedEvent(rec.event)||Number(rec.expiresAt||0)<=now()||targetKey(rec.target)!==targetKey()){dropQueued(k);return Promise.resolve(false)}
   if(rec.exhausted||(!force&&Number(rec.nextAt||0)>now()))return Promise.resolve(false);
   sendPending.add(k);
   queue=queue.catch(()=>{}).then(async()=>{

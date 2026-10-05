@@ -727,7 +727,7 @@ async function domWaitChatGptSendReady(scope,options={}){
     if(!scope.alive())return{ok:false,why:'runtime-destroyed',found:false,ready:false};
     if(expected&&domReadComposer()!==expected)return{ok:false,why:'composer-changed',found:false,ready:false,mode:'uncertain'};
     last=domChatGptHostControlState();
-    if(last.mode==='stop'||last.mode==='busy')return{ok:false,...last,waitedMs:Date.now()-started};
+    if(last.mode==='stop')return{ok:false,...last,waitedMs:Date.now()-started};
     if(last.mode==='send'&&last.ready)return{ok:true,...last,waitedMs:Date.now()-started};
     const alive=await scope.sleep(100);if(!alive)return{ok:false,why:'runtime-destroyed',found:false,ready:false};
   }

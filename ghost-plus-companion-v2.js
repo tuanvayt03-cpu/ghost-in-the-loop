@@ -129,6 +129,11 @@ function composerText() {
   const shared=window.__ghostPlusRuntime?.dom?.readComposer;
   return shared ? shared(el) : norm(el?.innerText ?? el?.textContent ?? el?.value ?? '');
 }
+function hostControlState(){
+  try{return window.__ghostPlusRuntime?.dom?.chatgptHostControlState?.()||null}catch(_){return null}
+}
+function hostBusy(state=hostControlState()){return !!state&&(state.mode==='stop'||state.mode==='busy'||state.busy===true)}
+
 function sharedTurns(){const rows=window.__ghostPlusRuntime?.dom?.chatgptTurns?.();return Array.isArray(rows)?rows:null}
 function users() { const rows=sharedTurns(); if(rows)return rows.filter(x=>x.role==='user').map(x=>x.el).filter(Boolean); return qa('[data-message-author-role="user"]').filter(el => el.isConnected); }
 function assistants() { const rows=sharedTurns(); if(rows)return rows.filter(x=>x.role==='assistant').map(x=>x.el).filter(Boolean); return qa('[data-message-author-role="assistant"]').filter(el => el.isConnected); }
@@ -266,6 +271,17 @@ function progressVisible() {
 }
 
 function detectBusyState() {
+  const host=hostControlState();
+  if(host?.mode==='stop'){
+    return {busy:true,strong:true,reasons:['host-stop'],pending:[],stopCount:1,squareStop:true,ariaBusy:false,progress:false,hostMode:'stop'};
+  }
+  if(host?.mode==='busy'){
+    return {busy:true,strong:false,reasons:[`host-busy:${host.activityReason||host.why||'activity'}`],pending:[],stopCount:0,squareStop:false,ariaBusy:false,progress:false,hostMode:'busy'};
+  }
+  if(host?.mode==='send'){
+    return {busy:false,strong:false,reasons:[host.ready?'host-send-ready':'host-send-disabled'],pending:[],stopCount:0,squareStop:false,ariaBusy:false,progress:false,hostMode:'send'};
+  }
+
   const sharedBusy=window.__ghostPlusRuntime?.dom?.isChatgptGenerating?.()===true;
   const stops = semanticStopButtons();
   const square = squareStopCandidate();
@@ -276,7 +292,7 @@ function detectBusyState() {
   if (sharedBusy || stops.length || square) {
     return {
       busy:true,strong:true,reasons,pending:[],stopCount:stops.length,
-      squareStop:!!square,ariaBusy:false,progress:false
+      squareStop:!!square,ariaBusy:false,progress:false,hostMode:'fallback-busy'
     };
   }
   const pending = pendingTexts();
@@ -293,10 +309,10 @@ function detectBusyState() {
     stopCount:0,
     squareStop:false,
     ariaBusy,
-    progress
+    progress,
+    hostMode:'fallback'
   };
 }
-
 function toolSignature() {
   const parts = [];
   const last = latestAssistant();
@@ -509,7 +525,8 @@ async function recover(snap,{allowStopped=false,source='idle'}={}) {
     return;
   }
 
-  if (!await setComposerText(recoveryPrompt()) || !RT.alive()) {
+  const prompt=recoveryPrompt();
+  if (!await setComposerText(prompt) || !RT.alive()) {
     S.recovering = false;
     notice('Ghost+ watchdog', 'Không stage được recovery status probe. Không gửi.');
     return;
@@ -518,18 +535,28 @@ async function recover(snap,{allowStopped=false,source='idle'}={}) {
   const beforeUsers = users().length;
   const beforeAssistantHash = fresh.assistantHash;
   if(!RT.alive()){S.recovering=false;return}
+  const host=hostControlState();
+  if(hostBusy(host)||host?.mode!=='send'){
+    await window.__ghostPlusRuntime?.dom?.clearComposerIfExact?.(prompt,RT,{verifyMs:1200});
+    S.recovering=false;
+    S.suspectAt=0;
+    notice('Ghost+ watchdog',hostBusy(host)
+      ?'ChatGPT đã chuyển sang BUSY trước recovery Send. Adopt/monitor luồng hiện tại, không gửi probe.'
+      :'Không xác nhận được Send control trước recovery. Hủy probe, không gửi.');
+    return;
+  }
   try { gp.click(); } catch (e) {
     S.recovering = false;
     notice('Ghost+ watchdog', 'Không khởi động lại Ghost: ' + String(e?.message || e));
     return;
   }
 
-  const restarted = await wait(() => ghostRunning() || detectBusyState().busy || users().length > beforeUsers, CFG.ghostRestartVerifyMs);
+  const restarted = await wait(() => users().length > beforeUsers, CFG.ghostRestartVerifyMs);
   if(!RT.alive()){S.recovering=false;return}
   if (!restarted) {
     S.recovering = false;
     clearLease();
-    const msg='Recovery probe đã được stage/actuate nhưng Ghost không xác nhận restart. Outcome gửi không chắc chắn; không tự resend.';
+    const msg='Recovery probe đã được stage nhưng không thấy user turn mới xác nhận Send. Outcome gửi không chắc chắn; không tự resend.';
     if(window.__ghostPlusSupervisor?.lock)window.__ghostPlusSupervisor.lock('HUMAN_REQUIRED',{reason:msg});
     else signal('CORE_BLOCKED','critical','Ghost+ watchdog',msg,{group:'operator',reason:msg});
     notice('Ghost+ watchdog',msg);

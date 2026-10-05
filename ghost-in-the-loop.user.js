@@ -41,6 +41,7 @@ const DRIFT_QUIET_MS = 9000;
 const WRITE_VERIFY_MS = 1800;
 const SEND_WAIT_MS = 2200;
 const CHATGPT_SEND_WAIT_MS = 10000;
+const CHATGPT_HOST_CONTROL_WAIT_MS = 8000;
 const SEND_CONFIRM_MS = 16000;
 const CHATGPT_SEND_CONFIRM_MS = 45000;
 const CONTINUITY_KEY = 'ghostplus.continuityLeaseStartedAt';
@@ -191,8 +192,26 @@ function userCount() {
   }
   return queryAll(HOST.user).filter(el => el.isConnected).length;
 }
+function chatgptHostControl(){
+  if(HOST.id!=='chatgpt')return null;
+  try{return window.__ghostPlusRuntime?.dom?.chatgptHostControlState?.()||null}catch(_){return null}
+}
+async function waitChatgptHostControl(){
+  if(HOST.id!=='chatgpt')return null;
+  const wait=window.__ghostPlusRuntime?.dom?.waitChatgptHostControl;
+  if(wait){
+    try{return await wait(RT,{timeoutMs:CHATGPT_HOST_CONTROL_WAIT_MS})}catch(_){}
+  }
+  return chatgptHostControl();
+}
+function hostBusy(state=chatgptHostControl()){
+  return !!state&&(state.mode==='stop'||state.mode==='busy'||state.busy===true);
+}
 function generating() {
   if (HOST.id === 'chatgpt') {
+    const state=chatgptHostControl();
+    if(state?.mode==='stop'||state?.mode==='busy')return true;
+    if(state?.mode==='send')return false;
     const shared=window.__ghostPlusRuntime?.dom?.isChatgptGenerating;
     if (shared) return !!shared();
   }
@@ -420,6 +439,13 @@ async function sendOnce(text, reason) {
   if(!RT.alive())return false;
   if (!sendReady?.ok || !sendReady.el) {
     S.sending = false;
+    if(HOST.id==='chatgpt'&&hostBusy(sendReady)){
+      const cleared=await window.__ghostPlusRuntime?.dom?.clearComposerIfExact?.(text,RT,{verifyMs:1200});
+      S.detail='ChatGPT switched to BUSY before Ghost Send · adopted active turn without sending';
+      log('send-skipped-host-busy',{reason,mode:String(sendReady?.mode||''),why:String(sendReady?.why||''),cleared:!!cleared?.ok});
+      armContinuity();render();
+      return true;
+    }
     fail('PLAY-SEND', `Prompt is staged, but the current host Send control did not become ready (${sendReady?.why||'unknown'}).`, {
       host: HOST.id,
       found: !!sendReady?.found,
@@ -434,11 +460,18 @@ async function sendOnce(text, reason) {
     const actuation=window.__ghostPlusRuntime.dom.actuateChatgptSend(text);
     if(!actuation?.ok){
       S.sending=false;
+      if(!actuation?.attempted&&(actuation?.mode==='stop'||actuation?.mode==='busy'||actuation?.why==='generation-active')){
+        const cleared=await window.__ghostPlusRuntime?.dom?.clearComposerIfExact?.(text,RT,{verifyMs:1200});
+        S.detail='ChatGPT became BUSY before actuation · adopted active turn without sending';
+        log('send-skipped-host-busy',{reason,mode:String(actuation?.mode||''),why:String(actuation?.why||''),cleared:!!cleared?.ok});
+        armContinuity();render();
+        return true;
+      }
       if(actuation?.attempted){
         S.uncertain=true;
         fail('PLAY-SEND-THREW','Send actuation threw or became uncertain. Ghost stopped to prevent a duplicate.',{why:String(actuation?.why||''),message:String(actuation?.error||'')});
       }else{
-        fail('PLAY-SEND',`Prompt is still staged, but Send became unsafe before actuation (${actuation?.why||'unknown'}).`,{host:HOST.id});
+        fail('PLAY-SEND',`Prompt is still staged, but Send became unsafe before actuation (${actuation?.why||'unknown'}).`,{host:HOST.id,mode:String(actuation?.mode||'')});
       }
       return false;
     }
@@ -542,17 +575,33 @@ async function play() {
   if (S.uncertain) { S.detail = 'Prior Send is uncertain. Inspect the chat or use Page Reload before resuming.'; render(); return; }
   const input = composer();
   if (!input) { fail('PLAY-INPUT', 'Current chat composer was not found.', { host: HOST.id }); return; }
+
+  let hostState=HOST.id==='chatgpt'?chatgptHostControl():null;
+  if(HOST.id==='chatgpt'&&(!hostState||hostState.mode==='missing'||hostState.mode==='uncertain')){
+    hostState=await waitChatgptHostControl();
+    if(!RT.alive())return;
+  }
+  const adoptActive=HOST.id==='chatgpt'&&hostBusy(hostState);
+  if(HOST.id==='chatgpt'&&!adoptActive&&hostState?.mode!=='send'){
+    fail('PLAY-HOST-CONTROL','ChatGPT host control could not be resolved as Stop or Send; Ghost will not send.',{
+      mode:String(hostState?.mode||'missing'),why:String(hostState?.why||'host-control-unresolved'),waitedMs:Number(hostState?.waitedMs)||0
+    });
+    return;
+  }
+
   const streamFault=streamFaultBlocksNewSend();
-  if(streamFault&&!generating()){
+  if(streamFault&&!adoptActive){
     pause(`ChatGPT stream state is desynchronized (${streamFault}); Web Recovery will observe before any new send.`);
     return;
   }
+
   S.mode = 'RUNNING'; S.detail = 'Starting...'; S.lastHandled = ''; S.stableHash = ''; S.stableSince = 0; S.drift = 0; S.relay = ''; render();
   const draft = nodeText(input); const latest = assistantText(); const parsed = terminal(latest);
-  if (generating()) {
+  if (adoptActive || generating()) {
     S.bootstrapped = true;
-    S.detail = 'Adopted active ChatGPT turn · monitoring without sending';
-    log('adopt-active-turn',{assistantPresent:!!latest,draftPresent:!!draft.trim()});
+    S.detail = `Adopted active ChatGPT turn · ${hostState?.mode||'busy'} · monitoring without sending`;
+    log('adopt-active-turn',{assistantPresent:!!latest,draftPresent:!!draft.trim(),mode:String(hostState?.mode||''),why:String(hostState?.why||'')});
+    armContinuity();
     render();
   } else if (draft.trim()) {
     S.bootstrapped = true; if (!await sendOnce(bootstrapPrompt(draft), 'initial task')) return;

@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.19`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.20`.
 
 ## Added behavior
 
@@ -427,3 +427,17 @@ This release hardens Ghost against a cluster of recent ChatGPT Web state-sync an
 - Fault identity is keyed by fault class rather than mutable banner/user/assistant text. A stale or re-rendered banner therefore stays one recovery episode while backend progress merely extends the quarantine instead of re-arming recovery.
 - Only explicit `SEND_TIMEOUT` can qualify as evidence that a Ghost recovery Send definitely failed. Connection interruption, stream-resume failure and message-delivery timeout are no longer treated as proof that a request was not accepted.
 - Existing uncertain-send behavior remains fail-closed: once an actuation occurred without acceptance proof, Ghost does not replay it.
+
+
+## v0.15.20 run-scoped watchdog alerts
+
+This release removes idle-tab Telegram spam from the BUSY watchdog.
+
+- `STALL_WARNING` is legal only while the Ghost core on that exact tab is `RUNNING`.
+- BUSY time accumulated before the operator presses Play is discarded for stall timing; entering RUNNING starts a fresh stall clock.
+- A continuous stall episode emits at most one warning. New meaningful turn/tool/status progress re-arms one future warning; elapsed time alone cannot repeat the same alert every ten minutes.
+- Watchdog stall events carry explicit run-scoped metadata (`runScoped`, `runId`, `ghostRunning`).
+- Alert Router refuses unscoped STALL_WARNING desktop notifications.
+- Telegram independently refuses STALL_WARNING without positive active-run evidence and purges legacy queued stall events that predate this contract, preventing an old outbox from replaying spam after upgrade.
+- COMPLETE remains a local desktop popup by default and is deduplicated with a six-hour same-page window. Telegram completion remains opt-in through the existing `complete` checkbox.
+- HUMAN / RELAY / CONTEXT / AUTH / RECOVERY alerts are unchanged.

@@ -83,6 +83,9 @@ function ghostRunning(){
   return /^RUNNING\b/i.test(norm(q('#gitl9 .status')?.textContent||''));
 }
 function generating(){
+  const host=window.__ghostPlusRuntime?.dom?.chatgptHostControlState?.();
+  if(host?.mode==='stop'||host?.mode==='busy')return true;
+  if(host?.mode==='send')return false;
   const shared=window.__ghostPlusRuntime?.dom?.isChatgptGenerating;
   if(shared)return !!shared();
   const sels=['button[data-testid="stop-button"]','button[aria-label="Stop generating"]','button[aria-label="Stop streaming"]','button[aria-label*="Dừng" i]'];

@@ -144,7 +144,15 @@ function stopButtons() {
   }
   return out;
 }
+function hostControlState(){
+  try{return window.__ghostPlusRuntime?.dom?.chatgptHostControlState?.()||null}catch(_){return null}
+}
+function hostBusy(state=hostControlState()){return !!state&&(state.mode==='stop'||state.mode==='busy'||state.busy===true)}
 function activityState(){
+  const host=hostControlState();
+  if(host?.mode==='stop')return{busy:true,strong:true,reason:'host-stop'};
+  if(host?.mode==='busy')return{busy:true,strong:false,reason:host.activityReason||host.why||'host-busy'};
+  if(host?.mode==='send')return{busy:false,strong:false,reason:host.ready?'host-send-ready':'host-send-disabled'};
   const shared=window.__ghostPlusRuntime?.dom?.chatgptActivityState;
   if(shared){try{return shared()}catch(_){}}
   const busy=stopButtons().length>0;
@@ -492,6 +500,15 @@ async function sendRecoveryProbe(snap) {
     renderWebState(snap, `${snap.error.type||'WEB_ERROR'} đã detect nhưng ChatGPT vẫn đang generating; chỉ theo dõi, chưa recovery.`);
     return;
   }
+  const hostBefore=hostControlState();
+  if(hostBusy(hostBefore)){
+    renderWebState(snap,`${snap.error.type||'WEB_ERROR'} · ChatGPT đang BUSY theo host control; chỉ monitor, không recovery Send.`);
+    return;
+  }
+  if(hostBefore&&hostBefore.mode!=='send'){
+    renderWebState(snap,`${snap.error.type||'WEB_ERROR'} · host control chưa resolve thành Send; chờ UI ổn định, không gửi.`);
+    return;
+  }
   if (composerText()) {
     renderWebState(snap,'Ô nhập đang có nội dung; chờ ô nhập trống để gửi báo cáo trạng thái. Không ghi đè và không nâng HUMAN.');
     return;
@@ -523,6 +540,15 @@ async function sendRecoveryProbe(snap) {
   let beforeAssistants = assistants().length;
   let attempt=beginRecoveryAttempt(prompt,snap,beforeUsers,beforeAssistants);
   if(!RT.alive()){S.recovering=false;return}
+  const hostAfterStage=hostControlState();
+  if(hostBusy(hostAfterStage)||hostAfterStage?.mode!=='send'){
+    await window.__ghostPlusRuntime?.dom?.clearComposerIfExact?.(prompt,RT,{verifyMs:1200});
+    S.recoveryAttempt=null;S.recovering=false;
+    renderWebState(snap,hostBusy(hostAfterStage)
+      ?'ChatGPT chuyển sang BUSY trước recovery Send; adopt/monitor, không gửi status probe.'
+      :'Host control đổi sang trạng thái mơ hồ trước recovery Send; hủy probe an toàn.');
+    return;
+  }
   try { gp.click(); } catch (e) {
     S.recoveryAttempt=null;
     requireHuman(snap,'Không khởi động được Ghost recovery: '+String(e?.message||e));
@@ -531,7 +557,7 @@ async function sendRecoveryProbe(snap) {
 
   const verifyMs=snap.streamDesync?CFG.streamSendVerifyMs:CFG.sendVerifyMs;
   let accepted = await wait(
-    () => generating() || users().length > beforeUsers || assistants().length > beforeAssistants,
+    () => users().length > beforeUsers,
     verifyMs
   );
   if(!RT.alive()){S.recovering=false;return}
@@ -573,13 +599,22 @@ async function sendRecoveryProbe(snap) {
       beforeUsers=users().length;
       beforeAssistants=assistants().length;
       attempt=beginRecoveryAttempt(attempt.prompt,snap,beforeUsers,beforeAssistants);
+      const retryHost=hostControlState();
+      if(hostBusy(retryHost)||retryHost?.mode!=='send'){
+        await window.__ghostPlusRuntime?.dom?.clearComposerIfExact?.(attempt.prompt,RT,{verifyMs:1200});
+        S.recoveryAttempt=null;S.recovering=false;
+        renderWebState(snap,hostBusy(retryHost)
+          ?'ChatGPT chuyển sang BUSY trước verified retry; không gửi lại.'
+          :'Host control không còn ở Send trước verified retry; hủy retry.');
+        return;
+      }
       try{retryPlay.click()}catch(e){
         S.recoveryAttempt=null;
         requireHuman(snap,'Không khởi động được verified-failure retry: '+String(e?.message||e));
         return;
       }
       accepted=await wait(
-        () => generating() || users().length > beforeUsers || assistants().length > beforeAssistants,
+        () => users().length > beforeUsers,
         verifyMs
       );
       if(!RT.alive()){S.recovering=false;return}

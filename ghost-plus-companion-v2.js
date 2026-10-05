@@ -100,6 +100,11 @@ const S = {
   lastRecoveryKey: '',
   recoveryBaselineAssistantHash: '',
   staleBusyNotifiedAt: 0,
+  ghostWasRunning: false,
+  runSerial: 0,
+  runId: '',
+  runStartedAt: 0,
+  stallEpisodeNotified: false,
   lastDeepAt: 0,
   lastLayoutAt: 0,
   lastViewportWidth: 0,
@@ -336,7 +341,7 @@ function updateProgress(snap) {
     S.lastSnapshot = snap; S.lastProgressAt = now();
     if (snap.busy.busy) { S.busySince = now(); S.lastBusyAt = now(); }
     else S.idleSince = now();
-    return;
+    return true;
   }
   let progressed = false;
   if (snap.users !== prev.users || snap.assistants !== prev.assistants || snap.assistantHash !== prev.assistantHash || snap.toolHash !== prev.toolHash || snap.busySignature !== prev.busySignature) {
@@ -363,6 +368,26 @@ function updateProgress(snap) {
     S.recoveryBaselineAssistantHash = '';
   }
   S.lastSnapshot = snap;
+  return progressed;
+}
+
+function syncRunState(running){
+  if(running&&!S.ghostWasRunning){
+    S.runSerial += 1;
+    S.runStartedAt = now();
+    S.runId = `${S.runStartedAt.toString(36)}-${S.runSerial.toString(36)}`;
+    S.lastProgressAt = S.runStartedAt;
+    S.staleBusyNotifiedAt = 0;
+    S.stallEpisodeNotified = false;
+  }else if(!running&&S.ghostWasRunning){
+    S.runStartedAt = 0;
+    S.runId = '';
+    S.staleBusyNotifiedAt = 0;
+    S.stallEpisodeNotified = false;
+    S.suspectAt = 0;
+    S.lastProgressAt = now();
+  }
+  S.ghostWasRunning=running;
 }
 
 function recoveryKey(snap) {
@@ -660,23 +685,34 @@ function render(snap = captureSnapshot()) {
 
 function sample() {
   addStyle(); controls(); layout();
-  const snap = captureSnapshot(); updateProgress(snap);
+  const snap = captureSnapshot();
+  const progressed = updateProgress(snap);
+  const running = ghostRunning();
+  syncRunState(running);
+  if(progressed&&running)S.stallEpisodeNotified=false;
 
   if (snap.busy.busy) {
     S.suspectAt = 0;
-    const stale = now() - S.lastProgressAt;
-    if (stale >= CFG.staleBusyWarnMs && now() - S.staleBusyNotifiedAt >= CFG.staleBusyWarnMs) {
-      S.staleBusyNotifiedAt = now();
-      const msg = `ChatGPT vẫn báo BUSY nhưng ${Math.round(stale/60000)} phút chưa có meaningful progress. Chỉ cảnh báo, không Stop/recovery.`;
-      signal('STALL_WARNING', 'warning', 'Ghost+ watchdog', msg, { group:'stall', reason:msg });
-      notice('Ghost+ watchdog', msg);
+    if(running){
+      const stale = now() - Math.max(S.lastProgressAt,S.runStartedAt||0);
+      if (stale >= CFG.staleBusyWarnMs && !S.stallEpisodeNotified) {
+        S.staleBusyNotifiedAt = now();
+        S.stallEpisodeNotified = true;
+        const msg = `Ghost đang RUNNING; ChatGPT vẫn báo BUSY nhưng ${Math.round(stale/60000)} phút chưa có meaningful progress. Chỉ cảnh báo một lần cho stall episode này, không Stop/recovery.`;
+        const eventId=`stall:${S.runId}:${recoveryKey(snap)}`;
+        signal('STALL_WARNING', 'warning', 'Ghost+ watchdog', msg, {
+          id:eventId, group:'stall', reason:msg,
+          data:{runScoped:true,runId:S.runId,ghostRunning:true,staleMs:stale}
+        });
+        notice('Ghost+ watchdog', msg);
+      }
     }
     render(snap); return;
   }
 
   if (runContinuityLease(snap)) { render(snap); return; }
 
-  if (operatorLocked() || !ghostRunning() || S.timeout===0 || S.recovering) {
+  if (operatorLocked() || !running || S.timeout===0 || S.recovering) {
     S.suspectAt = 0; render(snap); return;
   }
 
@@ -718,6 +754,8 @@ function resetRecoveryEpisode() {
   S.suspectAt = 0;
   S.lastProgressAt = now();
   S.idleSince = now();
+  S.staleBusyNotifiedAt = 0;
+  S.stallEpisodeNotified = false;
 }
 window.__ghostPlusWatchdog = { resetRecoveryEpisode, state: () => ({ recoveryCount:S.recoveryCount, recoveryBudget:S.recoveryBudget, recovering:S.recovering, continuityLeaseStartedAt:leaseStartedAt(), continuityRemainingMs:leaseRemaining() }) };
 RT.clearInterval(S.timer); S.timer = RT.interval(sample, CFG.tickMs);RT.cleanup(()=>{S.recovering=false;S.timer=null}); sample();

@@ -322,3 +322,97 @@ test('send readiness stays blocked while inferred ChatGPT activity is still pres
   expect(result.ok).toBe(true);
   expect(result.waitedMs).toBeGreaterThanOrEqual(150);
 });
+
+
+test('recognizes an unlabeled composer-local arrow control as Send after Ghost stages text',()=>{
+  document.body.innerHTML=`
+    <main>
+      <form data-type="unified-composer">
+        <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT">continue task</div>
+        <button class="composer-action"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></button>
+      </form>
+    </main>
+  `;
+  show(document.getElementById('prompt-textarea'));
+  const button=show(document.querySelector('.composer-action'),{top:626,width:36,height:36});
+  const rt=boot();
+  const state=rt.dom.chatgptHostControlState();
+  expect(state).toMatchObject({mode:'send',busy:false,ready:true});
+  expect(state.el).toBe(button);
+});
+
+test('recognizes the square Stop glyph even when ChatGPT drops stop data-testid and aria-label',()=>{
+  document.body.innerHTML=`
+    <main>
+      <form data-type="unified-composer">
+        <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT">queued draft</div>
+        <button id="composer-submit-button"><svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10"></rect></svg></button>
+      </form>
+    </main>
+  `;
+  show(document.getElementById('prompt-textarea'));
+  const button=show(document.getElementById('composer-submit-button'),{top:626,width:36,height:36});
+  const rt=boot();
+  const state=rt.dom.chatgptHostControlState();
+  expect(state).toMatchObject({mode:'stop',busy:true,ready:false,why:'host-stop-control'});
+  expect(state.el).toBe(button);
+  expect(rt.dom.actuateChatgptSend('queued draft')).toMatchObject({ok:false,attempted:false,why:'generation-active'});
+});
+
+test('host control resolves BUSY instead of Send when scoped ChatGPT activity conflicts with an arrow control',()=>{
+  document.body.innerHTML=`
+    <main>
+      <div role="status">Analyzing results</div>
+      <form data-type="unified-composer">
+        <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT">continue task</div>
+        <button class="composer-action"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></button>
+      </form>
+    </main>
+  `;
+  show(document.querySelector('[role="status"]'),{top:300,width:160,height:20});
+  show(document.getElementById('prompt-textarea'));
+  show(document.querySelector('.composer-action'),{top:626,width:36,height:36});
+  const rt=boot();
+  expect(rt.dom.chatgptHostControlState()).toMatchObject({mode:'busy',busy:true,ready:false});
+});
+
+test('waitChatgptSendReady returns immediately as BUSY when the primary control flips from Send to Stop',async()=>{
+  document.body.innerHTML=`
+    <main>
+      <form data-type="unified-composer">
+        <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT">continue task</div>
+        <button id="composer-submit-button" data-testid="send-button" aria-label="Send prompt" disabled></button>
+      </form>
+    </main>
+  `;
+  show(document.getElementById('prompt-textarea'));
+  const button=show(document.getElementById('composer-submit-button'),{top:626,width:36,height:36});
+  const rt=boot(),scope=rt.module('send-to-stop-test');
+  setTimeout(()=>{
+    button.disabled=false;
+    button.setAttribute('data-testid','stop-button');
+    button.setAttribute('aria-label','Stop streaming');
+  },180);
+  const result=await rt.dom.waitChatgptSendReady(scope,{expectedText:'continue task',timeoutMs:1200});
+  expect(result.ok).toBe(false);
+  expect(result).toMatchObject({mode:'stop',busy:true});
+  expect(result.waitedMs).toBeLessThan(900);
+});
+
+test('clearComposerIfExact removes only the Ghost-managed staged text during a BUSY race',async()=>{
+  document.body.innerHTML=`
+    <main>
+      <form data-type="unified-composer">
+        <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT">ghost managed prompt</div>
+        <button id="composer-submit-button" data-testid="stop-button" aria-label="Stop streaming"></button>
+      </form>
+    </main>
+  `;
+  show(document.getElementById('prompt-textarea'));
+  show(document.getElementById('composer-submit-button'),{top:626,width:36,height:36});
+  const rt=boot(),scope=rt.module('clear-managed-test');
+  expect(await rt.dom.clearComposerIfExact('different user text',scope,{verifyMs:400})).toMatchObject({ok:false,why:'composer-changed'});
+  expect(rt.dom.readComposer()).toBe('ghost managed prompt');
+  expect(await rt.dom.clearComposerIfExact('ghost managed prompt',scope,{verifyMs:600})).toMatchObject({ok:true});
+  expect(rt.dom.readComposer()).toBe('');
+});

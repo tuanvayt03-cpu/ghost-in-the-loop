@@ -50,7 +50,7 @@ assert.match(manager,/chatgptFaultState/,'shared ChatGPT fault-state resolver mi
 assert.match(manager,/STREAM_RESUME_UNAVAILABLE/,'Resume stream unavailable classification missing');
 assert.match(manager,/MESSAGE_DELIVERY_TIMEOUT/,'message delivery timeout classification missing');
 assert.match(manager,/domChatGptFaultFallbackText/,'bounded page-text stream-fault fallback missing');
-assert.match(loader,/ghostplus\.15\.19/);
+assert.match(loader,/ghostplus\.15\.20/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);
@@ -72,6 +72,14 @@ for(const file of modules){
 assert.match(read('ghost-plus-turn-budget-v2.js'),/RT\.patch\(HTMLButtonElement\.prototype,'click',wrapped\)/);
 assert.match(read('ghost-plus-telegram.js'),/RT\.abortable\(h\)/);
 assert.match(read('ghost-plus-telegram.js'),/RT\.cleanup\(unsubscribe\)/);
+const telegram=read('ghost-plus-telegram.js');
+const alertRouter=read('ghost-plus-alert-router.js');
+assert.match(telegram,/e\?\.data\?\.runScoped===true&&!!n\(e\?\.data\?\.runId\)&&e\?\.data\?\.ghostRunning===true/,'Telegram must reject STALL_WARNING without active-run evidence');
+assert.match(telegram,/function validQueuedEvent\(e\)/,'Telegram queued-event validation missing');
+assert.match(telegram,/if\(e\.type==='STALL_WARNING'\)return e\.runScoped===true&&!!n\(e\.runId\)/,'legacy queued stall alerts must be purged after upgrade');
+assert.match(telegram,/!validQueuedEvent\(rec\.event\)/,'outbox drain must refuse invalid legacy stall events');
+assert.match(alertRouter,/if\(e\.type==='STALL_WARNING'&&e\.data\?\.runScoped!==true\)return/,'desktop router must drop unscoped stall popups');
+assert.match(alertRouter,/e\.type==='COMPLETE'\?6\*60\*60\*1000/,'completion popup must have a long dedupe window');
 assert.doesNotMatch(read('ghost-in-the-loop.user.js'),/data-a="unload"/,'Unload must stay out of the production panel');
 
 for(const file of ['ghost-in-the-loop.user.js','ghost-plus-operator-gate.js','ghost-plus-companion-v2.js','ghost-plus-web-recovery.js','ghost-plus-turn-budget-v2.js']){
@@ -91,6 +99,14 @@ assert.match(watchdog,/if \(sharedBusy \|\| stops\.length \|\| square\)/,'shared
 assert.match(watchdog,/const text = latestAssistantText\(\);/,'BUSY assistant hash must use shared turn text');
 assert.doesNotMatch(watchdog,/last\?\.innerText/,'BUSY assistant hash must not use innerText');
 assert.match(watchdog,/now\(\)-S\.lastLayoutAt < CFG\.layoutMs/,'watchdog layout throttle missing');
+assert.match(watchdog,/const running = ghostRunning\(\);/,'watchdog must capture Ghost RUNNING state before stall alert decisions');
+assert.match(watchdog,/syncRunState\(running\)/,'watchdog run-scope transition tracking missing');
+assert.match(watchdog,/if\(progressed&&running\)S\.stallEpisodeNotified=false/,'meaningful progress must re-arm exactly one future stall episode');
+assert.match(watchdog,/if\(running\)\{[\s\S]*?signal\('STALL_WARNING'/,'STALL_WARNING must be nested under an active Ghost RUNNING guard');
+assert.match(watchdog,/!S\.stallEpisodeNotified/,'stall alert must be one-shot per stall episode');
+assert.match(watchdog,/data:\{runScoped:true,runId:S\.runId,ghostRunning:true,staleMs:stale\}/,'STALL_WARNING must carry positive run-scoped evidence');
+assert.match(watchdog,/S\.lastProgressAt = S\.runStartedAt/,'starting Ghost must reset stale age so pre-Play BUSY time cannot trigger an immediate warning');
+assert.match(watchdog,/S\.runId = ''/,'leaving RUNNING must clear the alert run id');
 assert.match(budget,/if\(startedAt && !ghostRunning\(\) && !T\.injectedText\)/,'stale Turn Budget reset missing');
 
 assert.match(watchdog,/continuityLeaseMs:\s*25\s*\*\s*60\s*\*\s*1000/,'continuity lease must stay at 25 minutes');

@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.20`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.21`.
 
 ## Added behavior
 
@@ -441,3 +441,21 @@ This release removes idle-tab Telegram spam from the BUSY watchdog.
 - Telegram independently refuses STALL_WARNING without positive active-run evidence, purges legacy queued stall events, and drops queued stall alerts as soon as Ghost is no longer RUNNING, preventing an old outbox from replaying spam after upgrade or after a job finishes.
 - COMPLETE remains a local desktop popup by default and is deduplicated with a six-hour same-page window. Telegram completion remains opt-in through the existing `complete` checkbox.
 - HUMAN / RELAY / CONTEXT / AUTH / RECOVERY alerts are unchanged.
+
+
+## v0.15.21 authoritative Stop / Send host control
+
+This release makes the ChatGPT composer action control the primary execution-state contract used by Ghost.
+
+- **Stop square = active ChatGPT turn.** Pressing Ghost Play/Continue adopts the running turn and monitors it; Ghost does not send another prompt.
+- **Send arrow = idle/send-capable ChatGPT.** Ghost may stage/send only through the normal at-most-once path.
+- **Unresolved control = fail closed.** Ghost waits up to 8 seconds for React/UI reconciliation; if the host still cannot be classified as Stop, BUSY, or Send, Play blocks instead of guessing.
+- Adds a composer-local primary-action fallback for ChatGPT A/B variants where the arrow/Stop button loses the historical `data-testid` or aria label:
+  - explicit `#composer-submit-button`, Send/Stop test ids and semantic labels remain highest confidence;
+  - an unlabeled square SVG glyph is recognized as Stop;
+  - an unlabeled composer-local arrow/action may be treated as Send only after Ghost has staged text and competing auxiliary controls have been filtered out.
+- Inferred tool/status BUSY remains a safety layer. It can hold Send readiness while activity is present, but only an explicit/visual Stop control causes immediate adoption during the send-readiness wait.
+- If ChatGPT flips from Send to Stop after Ghost stages text but before actuation, Ghost cancels its own exact staged draft, adopts the active turn, and performs no Send.
+- Core Play/Continue, Smart Watchdog, Web Recovery, Operator Gate, Core Busy Gate, and Turn Budget all consume the same host-control resolver.
+- Watchdog/Web Recovery re-check host control immediately before recovery actuation. If Stop/BUSY wins the race, their exact managed draft is cleared and no probe is sent.
+- Recovery acceptance no longer treats `Ghost RUNNING` or BUSY alone as proof of Send. A fresh ChatGPT user turn is required; uncertain outcomes remain no-resend.

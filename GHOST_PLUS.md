@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.21`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.22`.
 
 ## Added behavior
 
@@ -459,3 +459,16 @@ This release makes the ChatGPT composer action control the primary execution-sta
 - Core Play/Continue, Smart Watchdog, Web Recovery, Operator Gate, Core Busy Gate, and Turn Budget all consume the same host-control resolver.
 - Watchdog/Web Recovery re-check host control immediately before recovery actuation. If Stop/BUSY wins the race, their exact managed draft is cleared and no probe is sent.
 - Recovery acceptance no longer treats `Ghost RUNNING` or BUSY alone as proof of Send. A fresh ChatGPT user turn is required; uncertain outcomes remain no-resend.
+
+## v0.15.22 stream-fault host-state reconciliation
+
+This release fixes the case where ChatGPT shows a terminal stream fault but stale activity text such as `Resuming...` leaves Ghost stuck at `RUNNING · Model working...`.
+
+- **Explicit Stop remains authoritative.** If the real square Stop control exists, Ghost stays BUSY even when an old fault banner is still visible.
+- `Resume stream unavailable` and `Message delivery timed out` suppress only **weak/stale BUSY evidence** when no Stop exists. They resolve as explicit `fault-idle`, not as active generation.
+- A RUNNING Ghost that loses Stop and receives `Resume stream unavailable` releases the stale `Model working...` state on the next tick instead of remaining BUSY indefinitely.
+- Core Play accepts `fault-idle` only as an idle classification; known stream-desync faults still block a fresh Core Send and remain owned by Web Recovery.
+- Web Recovery may stage a new reconciliation probe from `fault-idle`, but must then observe a real READY Send control before actuation. If Send never becomes ready, the exact managed draft is cleared and no Send occurs.
+- Smart Watchdog, Core Busy Gate, Operator Gate and Turn Budget all treat explicit `fault-idle` as non-generating, so stale Watchdog BUSY text cannot re-lock the system.
+- The page-text fault fallback now excludes user/assistant conversation prose, Markdown/code, and composer text. Merely discussing the phrase `Resume stream unavailable` can no longer create a false stream fault.
+- Browser fault-injection coverage includes Stop, ready Send, voice-only unresolved composer, stale `Resuming...`, stream-resume fault, delivery timeout, Send→Stop race, exact draft preservation, and RUNNING→fault transition.

@@ -582,8 +582,9 @@ async function play() {
     if(!RT.alive())return;
   }
   const adoptActive=HOST.id==='chatgpt'&&hostBusy(hostState);
-  if(HOST.id==='chatgpt'&&!adoptActive&&hostState?.mode!=='send'){
-    fail('PLAY-HOST-CONTROL','ChatGPT host control could not be resolved as Stop or Send; Ghost will not send.',{
+  const hostIdle=HOST.id==='chatgpt'&&(hostState?.mode==='send'||hostState?.mode==='idle');
+  if(HOST.id==='chatgpt'&&!adoptActive&&!hostIdle){
+    fail('PLAY-HOST-CONTROL','ChatGPT host control could not be resolved as Stop, Send, or explicit fault-idle; Ghost will not send.',{
       mode:String(hostState?.mode||'missing'),why:String(hostState?.why||'host-control-unresolved'),waitedMs:Number(hostState?.waitedMs)||0
     });
     return;

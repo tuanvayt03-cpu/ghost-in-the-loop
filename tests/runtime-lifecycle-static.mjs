@@ -50,6 +50,7 @@ assert.match(manager,/chatgptFaultState/,'shared ChatGPT fault-state resolver mi
 assert.match(manager,/STREAM_RESUME_UNAVAILABLE/,'Resume stream unavailable classification missing');
 assert.match(manager,/MESSAGE_DELIVERY_TIMEOUT/,'message delivery timeout classification missing');
 assert.match(manager,/domChatGptFaultFallbackText/,'bounded page-text stream-fault fallback missing');
+assert.match(manager,/domChatGptFaultFallbackExcluded/,'fault fallback must exclude conversation prose and composer text');
 assert.match(manager,/chatgptHostControlState/,'shared ChatGPT Stop\/Send host-control resolver missing');
 assert.match(manager,/waitChatgptHostControl/,'bounded host-control reconciliation wait missing');
 assert.match(manager,/clearComposerIfExact/,'managed staged-draft cleanup helper missing');
@@ -58,8 +59,11 @@ assert.match(manager,/domChatGptStopGlyph/,'square Stop glyph fallback missing')
 assert.match(manager,/domChatGptPrimaryFallback/,'composer-local primary action fallback missing');
 assert.match(manager,/mode:'stop',busy:true/,'host Stop must resolve as BUSY');
 assert.match(manager,/mode:'send',busy:false/,'host Send must resolve as IDLE\/send-capable');
+assert.match(manager,/domChatGptFaultSuppressesWeakBusy/,'terminal stream faults must be able to suppress stale weak BUSY evidence');
+assert.match(manager,/mode:'idle',busy:false/,'Resume\/delivery terminal faults without Stop must resolve fault-idle');
+assert.match(manager,/recoverable-stream-fault-idle/,'fault-idle provenance missing');
 assert.match(manager,/mode:'uncertain'/,'unresolved host controls must fail closed');
-assert.match(loader,/ghostplus\.15\.21/);
+assert.match(loader,/ghostplus\.15\.22/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);
@@ -107,6 +111,7 @@ assert.match(watchdog,/tickMs:\s*2000/,'watchdog BUSY polling must stay throttle
 assert.match(watchdog,/deepScanMs:\s*5000/,'watchdog deep scan cadence regressed');
 assert.match(watchdog,/if\(host\?\.mode==='stop'\)/,'watchdog must prioritize shared host Stop state');
 assert.match(watchdog,/if\(host\?\.mode==='send'\)/,'watchdog must treat shared host Send state as IDLE');
+assert.match(watchdog,/if\(host\?\.mode==='idle'\)/,'watchdog must treat explicit fault-idle as IDLE instead of shared-generation BUSY');
 assert.match(watchdog,/const text = latestAssistantText\(\);/,'BUSY assistant hash must use shared turn text');
 assert.doesNotMatch(watchdog,/last\?\.innerText/,'BUSY assistant hash must not use innerText');
 assert.match(watchdog,/now\(\)-S\.lastLayoutAt < CFG\.layoutMs/,'watchdog layout throttle missing');
@@ -141,6 +146,7 @@ assert.match(coreHeader,/scrollDebugActive\?' · DBG':''/,'DBG indicator missing
 const corePlay=read('ghost-in-the-loop.user.js');
 const playBody=corePlay.slice(corePlay.indexOf('async function play()'),corePlay.indexOf('function pause(',corePlay.indexOf('async function play()')));
 assert.match(playBody,/const adoptActive=HOST\.id==='chatgpt'&&hostBusy\(hostState\)/,'Play must resolve ChatGPT host BUSY before any Send decision');
+assert.match(playBody,/const hostIdle=HOST\.id==='chatgpt'&&\(hostState\?\.mode==='send'\|\|hostState\?\.mode==='idle'\)/,'Play must accept explicit fault-idle only so Web Recovery can own stream faults');
 assert.match(playBody,/if \(adoptActive \|\| generating\(\)\)/,'active host turn adopt branch missing');
 assert.match(playBody,/Adopted active ChatGPT turn/,'active host turn adopt detail missing');
 assert.ok(playBody.indexOf("const adoptActive=HOST.id==='chatgpt'&&hostBusy(hostState)") < playBody.indexOf("} else if (draft.trim())"),'Stop\/BUSY adoption must be decided before draft bootstrap Send');
@@ -164,6 +170,7 @@ assert.match(core,/waitChatgptSendReady/,'core must use shared ChatGPT send read
 assert.match(core,/actuateChatgptSend/,'core must use shared ChatGPT send actuation');
 assert.match(budget,/isChatgptSendControl/,'Turn Budget must follow the same shared send identity contract');
 assert.match(budget,/chatgptHostControlState/,'Turn Budget generation decisions must follow shared Stop\/Send host state');
+assert.match(budget,/mode==='send'\|\|host\?\.mode==='idle'/,'Turn Budget must treat explicit fault-idle as non-generating');
 assert.match(core,/Prompt is staged, but the current host Send control did not become ready/,'pre-actuation send failure must remain distinguishable from uncertain send');
 assert.match(core,/if\(actuation\?\.attempted\)/,'post-actuation uncertainty guard missing');
 assert.match(core,/CHATGPT_SEND_CONFIRM_MS = 45000/,'ChatGPT send acceptance window must tolerate delayed renderer/backend acknowledgement');
@@ -187,6 +194,7 @@ assert.match(gateRuntime,/const userAdvanced=bu!==null&&users\(\)>bu/,'late user
 assert.match(gateRuntime,/const assistantAdvanced=ba!==null&&assistants\(\)>ba/,'late assistant-turn evidence missing');
 assert.match(gateRuntime,/const busy=modelBusy\(\)/,'late generation evidence missing');
 assert.match(gateRuntime,/chatgptHostControlState/,'Operator Gate must share the Stop\/Send host-control decision');
+assert.match(gateRuntime,/mode==='send'\|\|host\?\.mode==='idle'/,'Operator Gate must let explicit fault-idle override stale Watchdog BUSY text');
 assert.match(gateRuntime,/GATE_AUTO_RECONCILED/,'transient gate auto-clear event missing');
 assert.match(gateRuntime,/if\(busy\)\{/,'busy late-accept must adopt active turn');
 assert.doesNotMatch(gateRuntime,/transient:'WEB_SEND_UNCERTAIN'.*\[\[GITL::HUMAN\]\]/s,'assistant HUMAN must remain hard');
@@ -207,7 +215,10 @@ assert.match(webRecovery,/const key = active \? \(error\.type \|\| \['PLAY_SEND_
 assert.match(webRecovery,/chatgptFaultState/,'Web Recovery must consume the shared ChatGPT fault contract');
 assert.match(webRecovery,/chatgptActivityState/,'Web Recovery must consume the shared ChatGPT activity contract');
 assert.match(webRecovery,/chatgptHostControlState/,'Web Recovery must consume shared Stop\/Send host state');
-assert.match(webRecovery,/hostBusy\(hostAfterStage\)\|\|hostAfterStage\?\.mode!=='send'/,'Web Recovery must re-check host control after staging and before Play');
+assert.match(webRecovery,/\['send','idle'\]\.includes\(hostBefore\.mode\)/,'Web Recovery must accept explicit fault-idle before staging a fresh reconciliation probe');
+assert.match(webRecovery,/waitChatgptSendReady/,'Web Recovery must wait for a real READY Send control after staging and before Play');
+assert.match(webRecovery,/const sendReady=hostAfterStage\?\.mode==='send'/,'Web Recovery must re-check ready Send state after staging');
+assert.match(webRecovery,/const retryReady=retryHost\?\.mode==='send'/,'verified retry must independently re-check ready Send state');
 assert.match(webRecovery,/clearComposerIfExact/,'Web Recovery must clear only its own exact staged probe when BUSY wins');
 assert.match(webRecovery,/\(\) => users\(\)\.length > beforeUsers/,'Web Recovery acceptance must require a new user turn, not BUSY alone');
 assert.match(webRecovery,/STREAM_RESUME_UNAVAILABLE/,'Web Recovery must quarantine Resume stream unavailable');

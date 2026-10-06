@@ -19,7 +19,7 @@ function ghostNeedsGuard() {
 function nativeCoreStopVisible() {
   const host=window.__ghostPlusRuntime?.dom?.chatgptHostControlState?.();
   if(host?.mode==='stop'||host?.mode==='busy') return true;
-  if(host?.mode==='send') return false;
+  if(host?.mode==='send'||host?.mode==='idle') return false;
   if(window.__ghostPlusRuntime?.dom?.isChatgptGenerating?.()) return true;
   const selectors = [
     'button[data-testid="stop-button"]:not([data-ghostplus-sentinel])',

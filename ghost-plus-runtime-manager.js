@@ -2,7 +2,7 @@
 'use strict';
 
 const ROOT='__ghostPlusRuntime';
-const VERSION='0.15.21';
+const VERSION='0.15.22';
 const previous=window[ROOT];
 try { if(previous?.active && typeof previous.destroy==='function') previous.destroy('reinject'); } catch (_) {}
 
@@ -380,6 +380,9 @@ function domLatestChatGptAssistantText(){
 }
 function domChatGptUserCount(){return domChatGptTurns().filter(x=>x.role==='user').length}
 const CHATGPT_PENDING_RE=/(đang\s+(suy nghĩ|truy vấn|tìm|phân tích|xử lý|tải|chạy|gọi|thực thi|duyệt))|\b(thinking|searching|querying|analyzing|processing|working|running|retrieving|calling\s+(a\s+)?tool|using\s+(a\s+)?tool|browsing|fetching|resuming)\b/i;
+function domChatGptFaultSuppressesWeakBusy(type){
+  return ['STREAM_RESUME_UNAVAILABLE','MESSAGE_DELIVERY_TIMEOUT'].includes(String(type||''));
+}
 function domChatGptActivityState(){
   if(!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname))return{busy:false,strong:false,reason:'unsupported-host'};
   const strongSelectors=[
@@ -398,6 +401,11 @@ function domChatGptActivityState(){
     if(!domVisible(control)||control.closest?.('#gitl9,[id^="ghostplus-"]'))continue;
     const label=String(control.getAttribute?.('aria-label')||'');
     if(/Stop generating|Stop streaming|Stop responding|停止生成|正在思考/i.test(label))return{busy:true,strong:true,reason:'semantic-stop'};
+  }
+
+  const fault=domChatGptFaultState();
+  if(domChatGptFaultSuppressesWeakBusy(fault.type)){
+    return{busy:false,strong:false,reason:`fault-idle:${fault.type}`,faultType:fault.type};
   }
 
   const scopedStatusSelectors=[
@@ -464,6 +472,16 @@ function domChatGptRetryButtons(){
   });
 }
 let domFaultFallbackAt=0,domFaultFallbackText='';
+function domChatGptFaultFallbackExcluded(el){
+  if(!el)return true;
+  try{
+    return !!el.closest?.(
+      '#gitl9,[id^="ghostplus-"],'
+      +'article[data-testid*="conversation-turn"],[data-message-author-role],[data-turn="user"],[data-turn="assistant"],'
+      +'.markdown,pre,code,form[data-type="unified-composer"],#prompt-textarea,[data-testid="prompt-textarea"]'
+    );
+  }catch(_){return true}
+}
 function domChatGptFaultFallbackText(){
   const now=Date.now();
   if(now-domFaultFallbackAt<3000)return domFaultFallbackText;
@@ -481,16 +499,23 @@ function domChatGptFaultFallbackText(){
       const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
       let node=null,seen=0;
       while((node=walker.nextNode())&&seen++<6000){
-        const parent=node.parentElement;if(!parent||!domRendered(parent)||parent.closest?.('#gitl9,[id^="ghostplus-"]'))continue;
+        const parent=node.parentElement;
+        if(!parent||!domRendered(parent)||domChatGptFaultFallbackExcluded(parent))continue;
         const raw=String(node.nodeValue||'');
         for(const re of patterns){const m=raw.match(re);if(m){domFaultFallbackText=domNorm(m[0]);return domFaultFallbackText}}
       }
       return'';
     }
+    if(root){
+      const leaves=[...root.querySelectorAll('*')].filter(el=>!el.children?.length).slice(0,6000);
+      for(const el of leaves){
+        if(!domRendered(el)||domChatGptFaultFallbackExcluded(el))continue;
+        const raw=String(el.textContent||'');
+        for(const re of patterns){const m=raw.match(re);if(m){domFaultFallbackText=domNorm(m[0]);return domFaultFallbackText}}
+      }
+    }
   }catch(_){}
-  let raw='';try{raw=String(root?.textContent||'')}catch(_){}
-  for(const re of patterns){const m=raw.match(re);if(m){domFaultFallbackText=domNorm(m[0]);break}}
-  return domFaultFallbackText;
+  return'';
 }
 function domChatGptFaultState(){
   if(!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname))return{type:'',text:'',retryVisible:false};
@@ -676,6 +701,7 @@ function domChatGptHostControlState(){
   const root=domChatGptSendRoot();
   const stopEl=domChatGptExplicitStop(root);
   if(stopEl)return{mode:'stop',busy:true,ready:false,found:true,why:'host-stop-control',el:stopEl,source:'control'};
+  const fault=domChatGptFaultState();
   const activity=domChatGptActivityState();
   const ranked=domChatGptSendCandidates();
   if(ranked.length){
@@ -690,6 +716,9 @@ function domChatGptHostControlState(){
       why:disabled||ariaDisabled?'send-not-ready':'send-ready',el,source:'control',
       disabled,ariaDisabled,score:top.score
     };
+  }
+  if(domChatGptFaultSuppressesWeakBusy(fault.type)){
+    return{mode:'idle',busy:false,ready:false,found:false,why:'recoverable-stream-fault-idle',faultType:fault.type,el:null,source:'fault'};
   }
   if(activity.busy)return{mode:'busy',busy:true,ready:false,found:false,why:'activity-busy',activityReason:activity.reason,el:null,source:'activity'};
   return{mode:'uncertain',busy:false,ready:false,found:false,why:'host-control-unresolved',el:null,source:'none'};
@@ -714,7 +743,7 @@ async function domWaitChatGptHostControl(scope,options={}){
   while(Date.now()-started<timeoutMs){
     if(!scope.alive())return{ok:false,why:'runtime-destroyed',mode:'missing',busy:false,ready:false};
     last=domChatGptHostControlState();
-    if(last.mode==='stop'||last.mode==='busy'||last.mode==='send')return{ok:true,...last,waitedMs:Date.now()-started};
+    if(last.mode==='stop'||last.mode==='busy'||last.mode==='send'||last.mode==='idle')return{ok:true,...last,waitedMs:Date.now()-started};
     const alive=await scope.sleep(100);if(!alive)return{ok:false,why:'runtime-destroyed',mode:'missing',busy:false,ready:false};
   }
   return{ok:false,...last,waitedMs:Date.now()-started};

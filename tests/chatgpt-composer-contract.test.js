@@ -416,3 +416,88 @@ test('clearComposerIfExact removes only the Ghost-managed staged text during a B
   expect(await rt.dom.clearComposerIfExact('ghost managed prompt',scope,{verifyMs:600})).toMatchObject({ok:true});
   expect(rt.dom.readComposer()).toBe('');
 });
+
+test('Resume stream unavailable with an empty voice-only composer resolves fault-idle instead of stale BUSY',()=>{
+  document.body.innerHTML=`
+    <main>
+      <div data-stream-error>Resume stream unavailable</div>
+      <div role="status">Resuming...</div>
+      <form data-type="unified-composer">
+        <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT"></div>
+        <button aria-label="Start voice mode"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle></svg></button>
+      </form>
+    </main>
+  `;
+  show(document.querySelector('[data-stream-error]'),{top:500,width:260,height:24});
+  show(document.querySelector('[role="status"]'),{top:520,width:120,height:20});
+  show(document.getElementById('prompt-textarea'));
+  show(document.querySelector('button'),{top:626,width:36,height:36});
+  const rt=boot();
+  expect(rt.dom.chatgptFaultState()).toMatchObject({type:'STREAM_RESUME_UNAVAILABLE'});
+  expect(rt.dom.chatgptActivityState()).toMatchObject({busy:false,strong:false,faultType:'STREAM_RESUME_UNAVAILABLE'});
+  expect(rt.dom.chatgptHostControlState()).toMatchObject({mode:'idle',busy:false,ready:false,faultType:'STREAM_RESUME_UNAVAILABLE'});
+  expect(rt.dom.isChatgptGenerating()).toBe(false);
+});
+
+test('an explicit Stop control still wins over Resume stream unavailable fault-idle suppression',()=>{
+  document.body.innerHTML=`
+    <main>
+      <div data-stream-error>Resume stream unavailable</div>
+      <form data-type="unified-composer">
+        <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT"></div>
+        <button id="composer-submit-button" data-testid="stop-button" aria-label="Stop streaming"></button>
+      </form>
+    </main>
+  `;
+  show(document.querySelector('[data-stream-error]'),{top:500,width:260,height:24});
+  show(document.getElementById('prompt-textarea'));
+  show(document.getElementById('composer-submit-button'),{top:626,width:36,height:36});
+  const rt=boot();
+  expect(rt.dom.chatgptHostControlState()).toMatchObject({mode:'stop',busy:true,ready:false});
+  expect(rt.dom.isChatgptGenerating()).toBe(true);
+});
+
+test('a staged recovery prompt may resolve Send readiness while Resume stream unavailable remains visible',async()=>{
+  document.body.innerHTML=`
+    <main>
+      <div data-stream-error>Resume stream unavailable</div>
+      <div role="status">Resuming...</div>
+      <form data-type="unified-composer">
+        <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT">recovery status probe</div>
+        <button id="composer-submit-button" data-testid="send-button" aria-label="Send prompt"></button>
+      </form>
+    </main>
+  `;
+  show(document.querySelector('[data-stream-error]'),{top:500,width:260,height:24});
+  show(document.querySelector('[role="status"]'),{top:520,width:120,height:20});
+  show(document.getElementById('prompt-textarea'));
+  const send=show(document.getElementById('composer-submit-button'),{top:626,width:36,height:36});
+  const rt=boot(),scope=rt.module('resume-fault-send-test');
+  expect(rt.dom.chatgptHostControlState()).toMatchObject({mode:'send',busy:false,ready:true});
+  const ready=await rt.dom.waitChatgptSendReady(scope,{expectedText:'recovery status probe',timeoutMs:600});
+  expect(ready).toMatchObject({ok:true,mode:'send',ready:true});
+  expect(ready.el).toBe(send);
+});
+
+test('fault fallback ignores ordinary conversation prose that quotes ChatGPT error text',()=>{
+  document.body.innerHTML=`
+    <main>
+      <article data-testid="conversation-turn-1" aria-label="You said:">
+        <div class="markdown">Why does ChatGPT say Resume stream unavailable?</div>
+      </article>
+      <article data-testid="conversation-turn-2" aria-label="ChatGPT said:">
+        <div class="markdown">The phrase "Message delivery timed out. Please try again." is an error message you may encounter.</div>
+      </article>
+      <form data-type="unified-composer">
+        <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT"></div>
+        <button aria-label="Start voice mode"></button>
+      </form>
+    </main>
+  `;
+  document.querySelectorAll('article,.markdown').forEach((el,i)=>show(el,{top:180+i*30,width:500,height:24}));
+  show(document.getElementById('prompt-textarea'));
+  show(document.querySelector('button'),{top:626,width:36,height:36});
+  const rt=boot();
+  expect(rt.dom.chatgptFaultState()).toMatchObject({type:''});
+  expect(rt.dom.chatgptHostControlState()).toMatchObject({mode:'uncertain',busy:false});
+});

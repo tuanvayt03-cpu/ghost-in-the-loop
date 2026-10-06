@@ -281,6 +281,9 @@ function detectBusyState() {
   if(host?.mode==='send'){
     return {busy:false,strong:false,reasons:[host.ready?'host-send-ready':'host-send-disabled'],pending:[],stopCount:0,squareStop:false,ariaBusy:false,progress:false,hostMode:'send'};
   }
+  if(host?.mode==='idle'){
+    return {busy:false,strong:false,reasons:[`host-fault-idle:${host.faultType||'stream'}`],pending:[],stopCount:0,squareStop:false,ariaBusy:false,progress:false,hostMode:'idle'};
+  }
 
   const sharedBusy=window.__ghostPlusRuntime?.dom?.isChatgptGenerating?.()===true;
   const stops = semanticStopButtons();

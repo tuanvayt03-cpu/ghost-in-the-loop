@@ -11,32 +11,7 @@
     {
       "matches": [
         "https://chatgpt.com/*",
-        "https://chat.openai.com/*",
-        "https://www.perplexity.ai/*",
-        "https://gemini.google.com/*",
-        "https://chat.deepseek.com/*",
-        "https://copilot.microsoft.com/*",
-        "https://grok.com/*",
-        "https://claude.ai/*",
-        "https://manus.im/*",
-        "https://www.manus.im/*",
-        "https://chat.mistral.ai/*",
-        "https://kimi.com/*",
-        "https://www.kimi.com/*",
-        "https://kimi.moonshot.cn/*",
-        "https://chat.qwen.ai/*",
-        "https://meta.ai/*",
-        "https://www.meta.ai/*",
-        "https://poe.com/*",
-        "https://huggingface.co/chat*",
-        "https://you.com/*",
-        "https://pi.ai/*",
-        "https://chat.z.ai/*",
-        "https://genspark.ai/*",
-        "https://www.genspark.ai/*",
-        "https://chat.minimax.io/*",
-        "https://lmarena.ai/*",
-        "https://duck.ai/*"
+        "https://chat.openai.com/*"
       ],
       "js": [
         "content.js"

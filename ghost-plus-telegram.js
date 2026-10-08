@@ -8,7 +8,7 @@ const K={
   t:'ghostplus.tg.token',c:'ghostplus.tg.chat',n:'ghostplus.tg.name',b:'ghostplus.tg.bot',
   h:'ghostplus.tg.thread',p:'ghostplus.tg.topic',
   e:'ghostplus.tg.enabled',r:'ghostplus.tg.reason',s:'ghostplus.tg.stall',
-  f:'ghostplus.tg.complete',x:'ghostplus.tg.sent',m:'ghostplus.tg.reminders',o:'ghostplus.tg.outbox'
+  f:'ghostplus.tg.complete',x:'ghostplus.tg.sent',m:'ghostplus.tg.reminders',o:'ghostplus.tg.outbox',d:'ghostplus.tg.dedupe'
 };
 const q=(s,r=document)=>r.querySelector(s);
 const n=v=>String(v||'').replace(/\s+/g,' ').trim();
@@ -16,7 +16,7 @@ const now=()=>Date.now(),sleep=ms=>RT.sleep(ms);
 const get=(k,d='')=>{try{return GM_getValue(k,d)}catch(_){return d}};
 const set=(k,v)=>{try{GM_setValue(k,v)}catch(_){}};
 let code='',deadline=0,offset=0,timer=null,lastError='',queue=Promise.resolve();
-const reminderPending=new Set(), sendPending=new Set(), gateSyncAttempt=new Map();
+const reminderPending=new Set(), sendPending=new Set(), gateSyncAttempt=new Map(), semanticPending=new Set();
 
 const token=()=>n(get(K.t,''));
 const dest=()=>n(get(K.c,''));
@@ -49,6 +49,37 @@ function payloadForTarget(target,extra={}){
 }
 function targetPayload(extra={}){return payloadForTarget(currentTarget(),extra)}
 function targetKey(target=currentTarget()){return String(target?.chatId||'')+'|'+(Number(target?.threadId)||0)}
+function fp(v){
+  const s=String(v||'');let h=2166136261;
+  for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}
+  return (h>>>0).toString(16)
+}
+function semanticTtl(e){
+  if(e?.type==='CORE_BLOCKED')return 6*60*60*1000;
+  if(e?.type==='STALL_WARNING')return 30*60*1000;
+  if(e?.type==='COMPLETE')return 6*60*60*1000;
+  if(['HUMAN_REQUIRED','MODEL_RELAY','CONTEXT_BOUNDARY','AUTH_ERROR','RECOVERY_EXHAUSTED'].includes(e?.type))return 6*60*60*1000;
+  if(e?.severity==='critical')return 30*60*1000;
+  if(e?.severity==='warning')return 2*60*1000;
+  return 60*1000
+}
+function semanticKey(e){
+  if(!e)return'';
+  const stable=n(e.episodeId||e.reason||e.text||'').toLowerCase();
+  return fp([scopePath(),e.type||'GENERAL',e.group||'general',stable].join('|'))
+}
+function semanticMap(){return json(scoped(K.d))}
+function semanticRecent(e){
+  const k=semanticKey(e);if(!k)return false;
+  const at=Number(semanticMap()[k]||0);
+  return at>0&&now()-at<semanticTtl(e)
+}
+function markSemantic(e){
+  const k=semanticKey(e);if(!k)return;
+  const m=semanticMap();m[k]=now();
+  put(scoped(K.d),Object.fromEntries(Object.entries(m).sort((a,b)=>Number(b[1])-Number(a[1])).slice(0,120)))
+}
+
 function cleanEvent(e){
   return {
     id:n(e?.id).slice(0,180),type:n(e?.type).slice(0,80),severity:n(e?.severity||'info').slice(0,20),
@@ -73,6 +104,7 @@ function saveOutbox(box){
 function queued(k){return !!outbox()[k]}
 function dropQueued(k){const box=outbox();if(!(k in box))return;delete box[k];saveOutbox(box)}
 function queueEvent(k,e,rem=false){
+  if(!rem&&semanticRecent(e))return null;
   const target=currentTarget();
   if(!target.chatId)return null;
   const box=outbox(),old=box[k];
@@ -87,9 +119,13 @@ function validQueuedEvent(e){
   return true
 }
 function pruneOutbox(){
-  const box=outbox(),tk=targetKey();let changed=false;
+  const box=outbox(),tk=targetKey(),seenSemantic=new Set();let changed=false;
   for(const [k,r] of Object.entries(box)){
-    if(!r||!validQueuedEvent(r.event)||Number(r.expiresAt||0)<=now()||targetKey(r.target)!==tk||sent(k)){delete box[k];changed=true}
+    const sk=r?.event?semanticKey(r.event):'';
+    if(!r||!validQueuedEvent(r.event)||(!r.rem&&semanticRecent(r.event))||Number(r.expiresAt||0)<=now()||targetKey(r.target)!==tk||sent(k)||(sk&&seenSemantic.has(sk))){
+      delete box[k];changed=true;continue
+    }
+    if(sk)seenSemantic.add(sk)
   }
   if(changed)saveOutbox(box)
 }
@@ -169,7 +205,7 @@ function attemptQueued(k,force=false){
   queue=queue.catch(()=>{}).then(async()=>{
     try{
       await retry('sendMessage',payloadForTarget(rec.target,{text:text(rec.event,rec.rem)}),2);
-      mark(k);dropQueued(k);lastError='';render();return true
+      mark(k);if(!rec.rem)markSemantic(rec.event);dropQueued(k);lastError='';render();return true
     }catch(x){
       const box=outbox(),fresh=box[k];
       if(fresh){
@@ -185,10 +221,14 @@ function attemptQueued(k,force=false){
 }
 function send(e,{key='',rem=false}={}){
   if(!rem&&!should(e))return Promise.resolve(false);
+  const sk=!rem?semanticKey(e):'';
+  if(!rem&&(semanticRecent(e)||semanticPending.has(sk)))return Promise.resolve(false);
   const k=key||'event:'+(e.episodeId||e.id||e.type+':'+e.at)+':'+e.type;
   if(sent(k))return Promise.resolve(false);
-  queueEvent(k,e,rem);
-  return attemptQueued(k,false)
+  if(sk)semanticPending.add(sk);
+  const rec=queueEvent(k,e,rem);
+  if(!rec){if(sk)semanticPending.delete(sk);return Promise.resolve(false)}
+  return attemptQueued(k,false).finally(()=>{if(sk)semanticPending.delete(sk)})
 }
 function drainOutbox(force=false){
   if(!enabled()||!token()||!dest())return;

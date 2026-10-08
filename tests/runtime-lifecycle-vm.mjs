@@ -7,6 +7,7 @@ const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const source=fs.readFileSync(path.join(root,'ghost-plus-runtime-manager.js'),'utf8');
 
 globalThis.window=globalThis;
+globalThis.location={hostname:'chatgpt.com'};
 globalThis.requestAnimationFrame=cb=>setTimeout(()=>cb(Date.now()),5);
 globalThis.cancelAnimationFrame=id=>clearTimeout(id);
 
@@ -26,7 +27,7 @@ const assertAllZero=d=>{
 };
 
 const r1=boot();
-assert.equal(r1.version,'0.15.22');
+assert.equal(r1.version,'0.15.23');
 assert.equal(r1.generation,1);
 const s1=r1.module('vm-test');
 

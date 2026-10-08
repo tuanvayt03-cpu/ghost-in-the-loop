@@ -201,6 +201,15 @@ function squareStopCandidate() {
 
 const PENDING_RE = /(^|\b)(đang\s+(suy nghĩ|truy vấn|tìm|phân tích|xử lý|tải|chạy|gọi|thực thi|duyệt)|thinking|searching|querying|analyzing|processing|working|running|retrieving|calling\s+(a\s+)?tool|using\s+(a\s+)?tool|browsing|fetching)(\b|…|\.\.\.|$)/i;
 
+function activityRoots() {
+  const roots=[],seen=new Set();
+  const add=el=>{ if(el&&el.isConnected&&!seen.has(el)){seen.add(el);roots.push(el);} };
+  add(latestAssistant());
+  const input=composer();
+  add(input?.closest?.('form')||input?.parentElement||null);
+  return roots;
+}
+
 function statusNodes() {
   const selectors = [
     '[role="status"]',
@@ -214,12 +223,14 @@ function statusNodes() {
     '[class*="loading" i]'
   ];
   const seen = new Set(), out = [];
-  for (const sel of selectors) {
-    let nodes = [];
-    try { nodes = qa(sel); } catch (_) {}
-    for (const el of nodes) {
-      if (!visible(el) || seen.has(el)) continue;
-      seen.add(el); out.push(el);
+  for (const root of activityRoots()) {
+    for (const sel of selectors) {
+      let nodes = [];
+      try { nodes = qa(sel, root); } catch (_) {}
+      for (const el of nodes) {
+        if (!visible(el) || seen.has(el) || el.closest?.('.markdown,pre,code')) continue;
+        seen.add(el); out.push(el);
+      }
     }
   }
   return out;
@@ -243,29 +254,23 @@ function pendingTexts() {
 }
 
 function ariaBusyVisible() {
-  const selectors = [
-    'main [aria-busy="true"]',
-    'form [aria-busy="true"]',
-    '[data-message-author-role="assistant"] [aria-busy="true"]'
-  ];
-  for (const sel of selectors) {
+  for (const root of activityRoots()) {
+    if (root.getAttribute?.('aria-busy') === 'true' && visible(root)) return true;
     let nodes = [];
-    try { nodes = qa(sel); } catch (_) {}
-    if (nodes.some(visible)) return true;
+    try { nodes = qa('[aria-busy="true"]', root); } catch (_) {}
+    if (nodes.some(el=>visible(el)&&!el.closest?.('.markdown,pre,code'))) return true;
   }
   return false;
 }
 
 function progressVisible() {
-  const selectors = [
-    'main [role="progressbar"]',
-    'main [data-testid*="spinner" i]',
-    'main [class*="animate-spin" i]'
-  ];
-  for (const sel of selectors) {
-    let nodes = [];
-    try { nodes = qa(sel); } catch (_) {}
-    if (nodes.some(visible)) return true;
+  const selectors = ['[role="progressbar"]','[data-testid*="spinner" i]','[class*="animate-spin" i]'];
+  for (const root of activityRoots()) {
+    for (const sel of selectors) {
+      let nodes = [];
+      try { nodes = qa(sel, root); } catch (_) {}
+      if (nodes.some(el=>visible(el)&&!el.closest?.('.markdown,pre,code'))) return true;
+    }
   }
   return false;
 }

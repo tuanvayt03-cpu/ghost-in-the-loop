@@ -247,7 +247,9 @@ test('falls back to data-turn roles when conversation articles and legacy author
 test('treats scoped tool/status activity as busy even when the native Stop control is missing',()=>{
   document.body.innerHTML=`
     <main>
-      <div role="status">Searching the web</div>
+      <article data-testid="conversation-turn-2" aria-label="ChatGPT said:">
+        <div role="status">Searching the web</div>
+      </article>
       <form data-type="unified-composer">
         <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT"></div>
         <button id="composer-submit-button" data-testid="send-button" aria-label="Send prompt"></button>
@@ -306,14 +308,17 @@ test('finds Resume stream unavailable through the bounded page-text fallback',()
 test('send readiness stays blocked while inferred ChatGPT activity is still present',async()=>{
   document.body.innerHTML=`
     <main>
-      <div role="status">Analyzing results</div>
+      <article data-testid="conversation-turn-2" aria-label="ChatGPT said:">
+        <div role="status">Analyzing results</div>
+      </article>
       <form data-type="unified-composer">
         <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT">continue task</div>
         <button id="composer-submit-button" data-testid="send-button" aria-label="Send prompt"></button>
       </form>
     </main>
   `;
-  const status=show(document.querySelector('[role="status"]'),{top:300,width:150,height:20});
+  show(document.querySelector('article'),{top:220,width:600,height:70});
+  const status=show(document.querySelector('[role="status"]'),{top:240,width:150,height:20});
   show(document.getElementById('prompt-textarea'));
   show(document.getElementById('composer-submit-button'),{width:36,height:36});
   const rt=boot(),scope=rt.module('activity-send-test');
@@ -362,14 +367,17 @@ test('recognizes the square Stop glyph even when ChatGPT drops stop data-testid 
 test('host control resolves BUSY instead of Send when scoped ChatGPT activity conflicts with an arrow control',()=>{
   document.body.innerHTML=`
     <main>
-      <div role="status">Analyzing results</div>
+      <article data-testid="conversation-turn-2" aria-label="ChatGPT said:">
+        <div role="status">Analyzing results</div>
+      </article>
       <form data-type="unified-composer">
         <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT">continue task</div>
         <button class="composer-action"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></button>
       </form>
     </main>
   `;
-  show(document.querySelector('[role="status"]'),{top:300,width:160,height:20});
+  show(document.querySelector('article'),{top:220,width:600,height:70});
+  show(document.querySelector('[role="status"]'),{top:240,width:160,height:20});
   show(document.getElementById('prompt-textarea'));
   show(document.querySelector('.composer-action'),{top:626,width:36,height:36});
   const rt=boot();
@@ -499,5 +507,142 @@ test('fault fallback ignores ordinary conversation prose that quotes ChatGPT err
   show(document.querySelector('button'),{top:626,width:36,height:36});
   const rt=boot();
   expect(rt.dom.chatgptFaultState()).toMatchObject({type:''});
-  expect(rt.dom.chatgptHostControlState()).toMatchObject({mode:'uncertain',busy:false});
+  expect(rt.dom.chatgptHostControlState()).toMatchObject({mode:'idle',busy:false,ready:false,why:'resting-composer-control'});
+});
+
+test('ignores stale page-global loading status when the composer is visibly resting',()=>{
+  document.body.innerHTML=`
+    <main>
+      <div role="status">Đang tải tin nhắn cũ...</div>
+      <article data-testid="conversation-turn-2" aria-label="ChatGPT said:">
+        <div class="markdown">Final answer is already complete.</div>
+      </article>
+      <form data-type="unified-composer">
+        <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT"></div>
+        <button aria-label="Start voice mode"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle></svg></button>
+      </form>
+    </main>
+  `;
+  show(document.querySelector('[role="status"]'),{top:80,width:240,height:20});
+  show(document.querySelector('article'),{top:250,width:600,height:80});
+  show(document.querySelector('.markdown'),{top:270,width:500,height:30});
+  show(document.getElementById('prompt-textarea'));
+  show(document.querySelector('button'),{top:626,width:36,height:36});
+  const rt=boot();
+  expect(rt.dom.chatgptActivityState()).toMatchObject({busy:false});
+  expect(rt.dom.chatgptHostControlState()).toMatchObject({mode:'idle',busy:false,ready:false,why:'resting-composer-control'});
+  expect(rt.dom.isChatgptGenerating()).toBe(false);
+});
+
+test('ignores page-global progress indicators that are unrelated to the active assistant/composer',()=>{
+  document.body.innerHTML=`
+    <main>
+      <div role="progressbar">Loading conversation history</div>
+      <article data-testid="conversation-turn-2" aria-label="ChatGPT said:">
+        <div class="markdown">Done.</div>
+      </article>
+      <form data-type="unified-composer">
+        <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT"></div>
+        <button aria-label="Start voice mode"></button>
+      </form>
+    </main>
+  `;
+  show(document.querySelector('[role="progressbar"]'),{top:90,width:200,height:18});
+  show(document.querySelector('article'),{top:250,width:600,height:80});
+  show(document.querySelector('.markdown'),{top:270,width:500,height:30});
+  show(document.getElementById('prompt-textarea'));
+  show(document.querySelector('button'),{top:626,width:36,height:36});
+  const rt=boot();
+  expect(rt.dom.chatgptActivityState()).toMatchObject({busy:false});
+  expect(rt.dom.chatgptHostControlState()).toMatchObject({mode:'idle',busy:false});
+});
+
+test('scoped weak status expires after its TTL when no Stop control corroborates it',()=>{
+  const realNow=window.Date.now;
+  let fakeNow=1_000_000;
+  window.Date.now=()=>fakeNow;
+  try{
+    document.body.innerHTML=`
+      <main>
+        <article data-testid="conversation-turn-2" aria-label="ChatGPT said:">
+          <div role="status">Đang tải dữ liệu...</div>
+        </article>
+        <form data-type="unified-composer">
+          <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT"></div>
+          <button aria-label="Start voice mode"></button>
+        </form>
+      </main>
+    `;
+    show(document.querySelector('article'),{top:240,width:600,height:80});
+    show(document.querySelector('[role="status"]'),{top:260,width:180,height:20});
+    show(document.getElementById('prompt-textarea'));
+    show(document.querySelector('button'),{top:626,width:36,height:36});
+    const rt=boot();
+    expect(rt.dom.chatgptActivityState()).toMatchObject({busy:true,strong:false});
+    expect(rt.dom.chatgptHostControlState()).toMatchObject({mode:'busy',busy:true});
+    fakeNow+=12001;
+    expect(rt.dom.chatgptActivityState()).toMatchObject({busy:false});
+    expect(rt.dom.chatgptHostControlState()).toMatchObject({mode:'idle',busy:false,why:'resting-composer-control'});
+  }finally{
+    window.Date.now=realNow;
+  }
+});
+
+test('changing scoped weak status text re-arms its TTL while unchanged stale text does not',()=>{
+  const realNow=window.Date.now;
+  let fakeNow=2_000_000;
+  window.Date.now=()=>fakeNow;
+  try{
+    document.body.innerHTML=`
+      <main>
+        <article data-testid="conversation-turn-2" aria-label="ChatGPT said:">
+          <div role="status">Analyzing results</div>
+        </article>
+        <form data-type="unified-composer">
+          <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT"></div>
+          <button aria-label="Start voice mode"></button>
+        </form>
+      </main>
+    `;
+    show(document.querySelector('article'),{top:240,width:600,height:80});
+    const status=show(document.querySelector('[role="status"]'),{top:260,width:180,height:20});
+    show(document.getElementById('prompt-textarea'));
+    show(document.querySelector('button'),{top:626,width:36,height:36});
+    const rt=boot();
+    expect(rt.dom.chatgptActivityState().busy).toBe(true);
+    fakeNow+=12001;
+    expect(rt.dom.chatgptActivityState().busy).toBe(false);
+    status.textContent='Searching the web';
+    expect(rt.dom.chatgptActivityState()).toMatchObject({busy:true,strong:false});
+  }finally{
+    window.Date.now=realNow;
+  }
+});
+
+test('explicit ready Send beats unrelated global stale loading text',()=>{
+  document.body.innerHTML=`
+    <main>
+      <div role="status">Đang tải tin nhắn cũ...</div>
+      <form data-type="unified-composer">
+        <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT">continue</div>
+        <button id="composer-submit-button" data-testid="send-button" aria-label="Send prompt"></button>
+      </form>
+    </main>
+  `;
+  show(document.querySelector('[role="status"]'),{top:80,width:240,height:20});
+  show(document.getElementById('prompt-textarea'));
+  show(document.getElementById('composer-submit-button'),{top:626,width:36,height:36});
+  const rt=boot();
+  expect(rt.dom.chatgptActivityState()).toMatchObject({busy:false});
+  expect(rt.dom.chatgptHostControlState()).toMatchObject({mode:'send',busy:false,ready:true});
+});
+test('Tampermonkey loader, embedded core and Firefox manifest are ChatGPT-only',()=>{
+  const root=path.resolve(__dirname,'..');
+  for(const filename of ['ghost-plus.user.js','ghost-in-the-loop.user.js']){
+    const source=fs.readFileSync(path.join(root,filename),'utf8');
+    const matches=source.split(/\r?\n/).filter(line=>line.startsWith('// @match')).map(line=>line.slice('// @match'.length).trim());
+    expect(matches).toEqual(['https://chatgpt.com/*','https://chat.openai.com/*']);
+  }
+  const manifest=JSON.parse(fs.readFileSync(path.join(root,'extension','manifest.json'),'utf8'));
+  expect(manifest.content_scripts[0].matches).toEqual(['https://chatgpt.com/*','https://chat.openai.com/*']);
 });

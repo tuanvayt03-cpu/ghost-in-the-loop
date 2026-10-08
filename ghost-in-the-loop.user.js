@@ -6,18 +6,6 @@
 // @author       Michael S (CTRL-AI)
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
-// @match        https://www.perplexity.ai/*
-// @match        https://gemini.google.com/*
-// @match        https://claude.ai/*
-// @match        https://grok.com/*
-// @match        https://chat.deepseek.com/*
-// @match        https://copilot.microsoft.com/*
-// @match        https://chat.mistral.ai/*
-// @match        https://kimi.com/*
-// @match        https://www.kimi.com/*
-// @match        https://chat.qwen.ai/*
-// @match        https://poe.com/*
-// @match        https://duck.ai/*
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_setClipboard
@@ -211,7 +199,7 @@ function generating() {
   if (HOST.id === 'chatgpt') {
     const state=chatgptHostControl();
     if(state?.mode==='stop'||state?.mode==='busy')return true;
-    if(state?.mode==='send')return false;
+    if(state?.mode==='send'||state?.mode==='idle')return false;
     const shared=window.__ghostPlusRuntime?.dom?.isChatgptGenerating;
     if (shared) return !!shared();
   }

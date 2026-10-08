@@ -18,7 +18,7 @@ window.GM_xmlhttpRequest = () => {};
 `;
 
 function html(body) {
-  return `<!doctype html><html><head><style>
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
     body{font:14px system-ui;margin:0;min-height:900px}
     main{padding:24px}
     form[data-type="unified-composer"]{position:fixed;left:20%;right:20%;bottom:20px;display:flex;gap:8px;align-items:end}
@@ -36,7 +36,7 @@ const composer = (action, draft='') => `
 async function openFixture(page, body, { core=false } = {}) {
   await page.route('https://chatgpt.com/**', route => route.fulfill({
     status: 200,
-    contentType: 'text/html',
+    contentType: 'text/html; charset=utf-8',
     body: html(body)
   }));
   await page.goto('https://chatgpt.com/c/ghostplus-fault-matrix');
@@ -206,9 +206,74 @@ test.describe('Ghost+ authoritative ChatGPT host-control fault matrix', () => {
     expect(result).toMatchObject({ ok:false, mode:'stop', busy:true });
   });
 
-  test('unresolved voice-only composer without a terminal fault fails closed as uncertain', async ({ page }) => {
+  test('empty voice-only composer is recognized as resting idle', async ({ page }) => {
     await openFixture(page, composer('<button aria-label="Start voice mode" type="button">voice</button>'));
-    expect(await host(page)).toMatchObject({ mode:'uncertain', busy:false, ready:false, generating:false });
+    expect(await host(page)).toMatchObject({ mode:'idle', busy:false, ready:false, generating:false, why:'resting-composer-control' });
+  });
+
+  test('page-global stale Đang tải status cannot hold an idle voice composer BUSY', async ({ page }) => {
+    await openFixture(page,
+      '<div role="status">Đang tải tin nhắn cũ...</div>' +
+      '<article data-testid="conversation-turn-2" aria-label="ChatGPT said:"><div class="markdown">Done.</div></article>' +
+      composer('<button aria-label="Start voice mode" type="button">voice</button>'),
+      { core:true }
+    );
+    expect(await host(page)).toMatchObject({mode:'idle',busy:false,ready:false,generating:false,why:'resting-composer-control'});
+    await page.locator('#gitl9 [data-a="play"]').click();
+    await expect(page.locator('#gitl9 .status')).not.toContainText('Model working...', {timeout:2500});
+  });
+
+  test('scoped weak loading status expires without Stop corroboration', async ({ page }) => {
+    await openFixture(page,
+      '<article data-testid="conversation-turn-2" aria-label="ChatGPT said:"><div role="status">Đang tải dữ liệu...</div></article>' +
+      composer('<button aria-label="Start voice mode" type="button">voice</button>')
+    );
+    const first=await host(page);
+    expect(first).toMatchObject({mode:'busy',busy:true,generating:true});
+    await page.evaluate(() => {
+      const real=Date.now;
+      window.__ghostRealDateNow=real;
+      const base=real();
+      Date.now=()=>base+12001;
+    });
+    const expired=await host(page);
+    expect(expired).toMatchObject({mode:'idle',busy:false,generating:false,why:'resting-composer-control'});
+  });
+
+  test('RUNNING Ghost releases Model-working when Stop disappears but stale global Đang tải remains', async ({ page }) => {
+    await openFixture(page,
+      '<article data-testid="conversation-turn-2" aria-label="ChatGPT said:"><div class="markdown">Work in progress.</div></article>' +
+      composer('<button id="composer-submit-button" data-testid="stop-button" aria-label="Stop streaming" type="button">■</button>'),
+      {core:true}
+    );
+    await page.locator('#gitl9 [data-a="play"]').click();
+    await expect(page.locator('#gitl9 .status')).toContainText('RUNNING');
+    await expect(page.locator('#gitl9 .status')).toContainText('Model working...');
+
+    await page.evaluate(()=>{
+      const main=document.querySelector('main');
+      const stale=document.createElement('div');
+      stale.setAttribute('role','status');
+      stale.textContent='Đang tải tin nhắn cũ...';
+      main.prepend(stale);
+      const button=document.getElementById('composer-submit-button');
+      button.removeAttribute('id');
+      button.removeAttribute('data-testid');
+      button.setAttribute('aria-label','Start voice mode');
+      button.textContent='voice';
+    });
+
+    await expect.poll(async()=> (await host(page)).mode).toBe('idle');
+    await expect.poll(async()=> (await host(page)).generating).toBe(false);
+    await expect(page.locator('#gitl9 .status')).not.toContainText('Model working...', {timeout:2500});
+  });
+
+  test('ready Send is authoritative over unrelated global loading leftovers', async ({ page }) => {
+    await openFixture(page,
+      '<div role="status">Đang tải tin nhắn cũ...</div>' +
+      composer('<button id="composer-submit-button" data-testid="send-button" aria-label="Send prompt" type="button">↑</button>','continue')
+    );
+    expect(await host(page)).toMatchObject({mode:'send',busy:false,ready:true,generating:false});
   });
 
   test('exact managed-draft cleanup preserves unrelated user text', async ({ page }) => {
@@ -228,4 +293,18 @@ test.describe('Ghost+ authoritative ChatGPT host-control fault matrix', () => {
     expect(result.exact).toMatchObject({ok:true});
     expect(result.afterExact).toBe('');
   });
+});
+test('Ghost runtime and core refuse to initialize on a mocked non-ChatGPT host',async({page})=>{
+  await page.route('https://gemini.google.com/**',route=>route.fulfill({
+    status:200,contentType:'text/html',
+    body:html(composer('<button id="composer-submit-button" data-testid="send-button" aria-label="Send prompt">↑</button>','a task'))
+  }));
+  await page.goto('https://gemini.google.com/app');
+  await page.addScriptTag({content:GM+'\n'+RUNTIME+'\n'+CORE});
+  const state=await page.evaluate(()=>({
+    runtime:!!window.__ghostPlusRuntime,
+    panel:!!document.getElementById('gitl9'),
+    core:window.__GITL_V9__===true
+  }));
+  expect(state).toEqual({runtime:false,panel:false,core:false});
 });

@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.22`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.23`.
 
 ## Added behavior
 
@@ -472,3 +472,20 @@ This release fixes the case where ChatGPT shows a terminal stream fault but stal
 - Smart Watchdog, Core Busy Gate, Operator Gate and Turn Budget all treat explicit `fault-idle` as non-generating, so stale Watchdog BUSY text cannot re-lock the system.
 - The page-text fault fallback now excludes user/assistant conversation prose, Markdown/code, and composer text. Merely discussing the phrase `Resume stream unavailable` can no longer create a false stream fault.
 - Browser fault-injection coverage includes Stop, ready Send, voice-only unresolved composer, stale `Resuming...`, stream-resume fault, delivery timeout, Send→Stop race, exact draft preservation, and RUNNING→fault transition.
+
+## v0.15.23 ChatGPT-only / stale weak BUSY hardening
+
+Ghost+ is enabled only for `https://chatgpt.com/*` and the legacy ChatGPT host `https://chat.openai.com/*`. All other userscript `@match` entries were removed from both the loader and embedded core. The Firefox manifest's `content_scripts.matches` is likewise ChatGPT-only. The shared runtime separately refuses initialization on every other hostname, even if an outdated userscript metadata entry still injects the loader. Updating Tampermonkey/reloading tabs is required for the new metadata to take effect.
+
+**BUSY state evidence priority**
+- Visible, active composer Stop remains authoritative BUSY evidence, including the square glyph fallback.
+- Current turn/composer tool/status/progress evidence is weak and limited to a 12-second unchanged-content window without Stop corroboration. A changed signal starts a fresh observation window.
+- Page-global loading status/spinner, conversation-history loading and unrelated old `Đang tải...` UI do not count as ChatGPT generation.
+- Empty composer with visible microphone/voice-only control is IDLE (not Send-ready). A fresh prompt still requires the real enabled Send action; Ghost does not invent a Send action from a voice icon.
+- Unknown/ambiguous controls remain fail-closed and uncertain Send outcomes remain no-resend.
+
+Alert Router/Telegram add semantic episode deduplication, including repeated CORE_BLOCKED and local completion messages, without suppressing different fault reasons. Legacy outbox and run-scoped stall protections remain in force.
+
+Regression coverage includes stale global status, scoped status TTL, genuine Stop, ready/disabled Send, Stop↔Send transition, stream faults, prompt preservation, deduped desktop/Telegram events, runtime lifecycle cleanup, and a browser fixture proving that a non-ChatGPT hostname cannot boot the Ghost runtime or panel.
+
+**Boundary:** Chromium browser cases are synthetic fixtures, not certification of the user's logged-in ChatGPT tab. The older Firefox generated artifact check remains baseline-broken and is separate from this Ghost+ Tampermonkey release.

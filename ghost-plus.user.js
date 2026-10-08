@@ -1,37 +1,25 @@
 // ==UserScript==
 // @name         Ghost in the Loop +
 // @namespace    https://github.com/tuanvayt03-cpu/ghost-in-the-loop
-// @version      9.0.0-alpha.2+ghostplus.15.22
+// @version      9.0.0-alpha.2+ghostplus.15.23
 // @description  Ghost in the Loop with owned runtime lifecycle, persistent operator gate, Telegram alerts, busy-aware recovery and safe unload.
 // @author       Michael S (CTRL-AI) + tuanvayt03-cpu
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
-// @match        https://www.perplexity.ai/*
-// @match        https://gemini.google.com/*
-// @match        https://claude.ai/*
-// @match        https://grok.com/*
-// @match        https://chat.deepseek.com/*
-// @match        https://copilot.microsoft.com/*
-// @match        https://chat.mistral.ai/*
-// @match        https://kimi.com/*
-// @match        https://www.kimi.com/*
-// @match        https://chat.qwen.ai/*
-// @match        https://poe.com/*
-// @match        https://duck.ai/*
-// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/187c64dd4b58fa7a1571e334ed419bcda8756c7c/ghost-plus-runtime-manager.js
-// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/187c64dd4b58fa7a1571e334ed419bcda8756c7c/ghost-plus-alert-router.js
-// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/187c64dd4b58fa7a1571e334ed419bcda8756c7c/ghost-plus-telegram.js
-// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/187c64dd4b58fa7a1571e334ed419bcda8756c7c/ghost-plus-turn-budget-v2.js
-// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/187c64dd4b58fa7a1571e334ed419bcda8756c7c/ghost-in-the-loop.user.js
-// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/187c64dd4b58fa7a1571e334ed419bcda8756c7c/ghost-plus-operator-gate.js
-// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/187c64dd4b58fa7a1571e334ed419bcda8756c7c/ghost-plus-uncertain-reconcile.js
-// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/187c64dd4b58fa7a1571e334ed419bcda8756c7c/ghost-plus-companion-v2.js
-// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/187c64dd4b58fa7a1571e334ed419bcda8756c7c/ghost-plus-core-busy-gate.js
-// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/187c64dd4b58fa7a1571e334ed419bcda8756c7c/ghost-plus-context-boundary.js
-// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/187c64dd4b58fa7a1571e334ed419bcda8756c7c/ghost-plus-web-recovery.js
-// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/187c64dd4b58fa7a1571e334ed419bcda8756c7c/ghost-plus-ui-vi-safe.js
-// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/187c64dd4b58fa7a1571e334ed419bcda8756c7c/ghost-plus-help.js
-// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/187c64dd4b58fa7a1571e334ed419bcda8756c7c/ghost-plus-layout-fix.js
+// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/bc2462a8a397633830ddb975352cbb6fa2770a35/ghost-plus-runtime-manager.js
+// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/bc2462a8a397633830ddb975352cbb6fa2770a35/ghost-plus-alert-router.js
+// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/bc2462a8a397633830ddb975352cbb6fa2770a35/ghost-plus-telegram.js
+// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/bc2462a8a397633830ddb975352cbb6fa2770a35/ghost-plus-turn-budget-v2.js
+// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/bc2462a8a397633830ddb975352cbb6fa2770a35/ghost-in-the-loop.user.js
+// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/bc2462a8a397633830ddb975352cbb6fa2770a35/ghost-plus-operator-gate.js
+// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/bc2462a8a397633830ddb975352cbb6fa2770a35/ghost-plus-uncertain-reconcile.js
+// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/bc2462a8a397633830ddb975352cbb6fa2770a35/ghost-plus-companion-v2.js
+// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/bc2462a8a397633830ddb975352cbb6fa2770a35/ghost-plus-core-busy-gate.js
+// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/bc2462a8a397633830ddb975352cbb6fa2770a35/ghost-plus-context-boundary.js
+// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/bc2462a8a397633830ddb975352cbb6fa2770a35/ghost-plus-web-recovery.js
+// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/bc2462a8a397633830ddb975352cbb6fa2770a35/ghost-plus-ui-vi-safe.js
+// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/bc2462a8a397633830ddb975352cbb6fa2770a35/ghost-plus-help.js
+// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/bc2462a8a397633830ddb975352cbb6fa2770a35/ghost-plus-layout-fix.js
 // @updateURL    https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/main/ghost-plus.user.js
 // @downloadURL  https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/main/ghost-plus.user.js
 // @grant        GM_getValue

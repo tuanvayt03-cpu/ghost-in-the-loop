@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.25`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.26`.
 
 ## Added behavior
 
@@ -520,3 +520,13 @@ This release:
 Regression fixtures include long answers with multiple Markdown blocks/table and trailing `HALT`, dynamically appearing assistant messages, roleless assistant replies, newer user turns, false-positive user quotes, and one-shot/Stop/adopt behavior.
 
 **Live boundary:** these are fresh isolated Chromium DOM simulations; the user's authenticated ChatGPT tab has not been certified until Tampermonkey is updated and the affected tab is reloaded.
+
+## v0.15.26 task-preserving Operator Gate tab title
+
+- While a HUMAN/CONTEXT/AUTH/RECOVERY gate is active, browser tab shows **one red dot plus the original task name**, e.g. `🔴 Copy trade research`, not repeated `🔴 HUMAN ·` prefixes.
+- MODEL_RELAY uses one orange dot with the task name.
+- Cleanup strips every historical Ghost badge prefix, including legacy stacked titles, and preserves the user's real chat title.
+- If the existing title was reduced to badges, the active conversation's matching sidebar link supplies the task name; a sidebar rename updates the tab while locked.
+- Chat route changes and gate clear/unload restore an undecorated title without carrying state to another conversation.
+- The Alert Router consumes the same title normalization to avoid forwarding a decorated label as the chat name.
+- New browser tests cover repeated badges, missing name recovery, rename during Gate, SPA route change, cleanup, and RELAY coloring. Host-control safety and no-resend behavior are unchanged.

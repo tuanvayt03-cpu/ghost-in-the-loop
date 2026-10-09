@@ -2,7 +2,7 @@
 'use strict';
 
 const ROOT='__ghostPlusRuntime';
-const VERSION='0.15.25';
+const VERSION='0.15.26';
 const previous=window[ROOT];
 try { if(previous?.active && typeof previous.destroy==='function') previous.destroy('reinject'); } catch (_) {}
 // Fail closed even if an older Tampermonkey installation still injects this loader
@@ -156,9 +156,15 @@ function makeScope(name){
   return api;
 }
 
+function domCleanGhostTabTitle(value){
+  let title=String(value||'').replace(/\s+/g,' ').trim();
+  const badge=/^(?:🔴|🟠)\s*(?:(?:HUMAN|RELAY|CONTEXT|AUTH|RECOVERY|BLOCKED)\s*(?:[·|:–-]\s*|$))?/u;
+  for(let i=0;i<20&&badge.test(title);i++)title=title.replace(badge,'').trim();
+  return title;
+}
 function cleanupDom(){
   try{document.documentElement.removeAttribute('data-ghostplus-gate')}catch(_){}
-  try{document.title=document.title.replace(/^[🔴🟠]\s+(HUMAN|RELAY|CONTEXT|AUTH|RECOVERY|BLOCKED)\s+·\s+/,'')}catch(_){}
+  try{document.title=domCleanGhostTabTitle(document.title)||'ChatGPT'}catch(_){}
   try{
     for(const el of document.querySelectorAll('#gitl9,[id^="ghostplus-"]'))el.remove();
   }catch(_){}
@@ -930,6 +936,7 @@ function domActuateChatGptSend(expectedText=''){
   try{state.el.click();return{ok:true,attempted:true,why:'clicked'}}catch(error){return{ok:false,attempted:true,why:'click-threw',error:String(error?.message||error)}}
 }
 const dom=Object.freeze({
+  cleanGhostTabTitle:domCleanGhostTabTitle,
   composer:domComposer,
   composerCandidates:domComposerCandidates,
   readComposer:domReadComposer,

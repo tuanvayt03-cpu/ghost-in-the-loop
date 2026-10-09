@@ -744,3 +744,11 @@ test('a text block uses textContent when innerText is an empty string',()=>{
   const rt=boot();
   expect(rt.dom.latestChatgptAssistantText()).toContain('Completed and saved.');
 });
+test('Ghost title cleaner removes legacy badge stacks but keeps the task name',()=>{
+  const rt=boot(),clean=rt.dom.cleanGhostTabTitle;
+  expect(clean('🔴 HUMAN · 🔴 HUMAN · Copy trade research')).toBe('Copy trade research');
+  expect(clean('🟠 RELAY · 🔴 HUMAN · Second Brain')).toBe('Second Brain');
+  expect(clean('🔴 Top Down')).toBe('Top Down');
+  expect(clean('HUMAN research project')).toBe('HUMAN research project');
+  expect(clean('🔴 HUMAN · 🔴 HUMAN')).toBe('');
+});

@@ -24,6 +24,15 @@ assert.match(manager,/Object\.defineProperty\(p\.obj,p\.key,p\.desc\)/);
 assert.match(manager,/ghostplusLastDiagnostics/);
 assert.match(manager,/allZero:Object\.values\(totals\)\.every/);
 assert.match(manager,/CHATGPT_COMPOSER_SELECTORS/,'shared ChatGPT composer contract missing');
+
+assert.match(manager,/function domCleanGhostTabTitle\(/,'runtime must clean historical stacked Ghost tab prefixes');
+assert.match(manager,/cleanGhostTabTitle:domCleanGhostTabTitle/,'title cleaner must be shared across Ghost modules');
+const operatorGate=read('ghost-plus-operator-gate.js');
+assert.match(operatorGate,/function sidebarTaskName\(/,'operator title badge must preserve real sidebar task name');
+assert.match(operatorGate,/setGateTabTitle\(g\.type\)/,'operator gate must render one title badge');
+assert.match(operatorGate,/restoreTabTitle\(\)/,'operator gate must restore title on clear or unload');
+assert.doesNotMatch(operatorGate,/document\.title=`\$\{gm\.icon\} \$\{gm\.short\}/,'verbose repeated HUMAN prefixes must not be rendered');
+
 assert.match(manager,/[data-testid="prompt-textarea"]/,'current ChatGPT data-testid composer selector missing');
 assert.match(manager,/role="textbox"/,'role-based ChatGPT composer fallback missing');
 assert.match(manager,/stageComposerText/,'shared staged-write verifier missing');
@@ -72,7 +81,7 @@ assert.match(manager,/domChatGptFaultSuppressesWeakBusy/,'terminal stream faults
 assert.match(manager,/mode:'idle',busy:false/,'Resume\/delivery terminal faults without Stop must resolve fault-idle');
 assert.match(manager,/recoverable-stream-fault-idle/,'fault-idle provenance missing');
 assert.match(manager,/mode:'uncertain'/,'unresolved host controls must fail closed');
-assert.match(loader,/ghostplus\.15\.25/);
+assert.match(loader,/ghostplus\.15\.26/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);

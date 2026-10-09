@@ -111,6 +111,7 @@ function requireHuman(snap, message, gateMeta={}) {
         autoReconcile:!!gateMeta.autoReconcile,
         baselineUsers:Number.isFinite(gateMeta.baselineUsers)?gateMeta.baselineUsers:null,
         baselineAssistants:Number.isFinite(gateMeta.baselineAssistants)?gateMeta.baselineAssistants:null,
+        baselineAssistantHash:norm(gateMeta.baselineAssistantHash||''),
         faultKey:norm(gateMeta.faultKey||snap?.key||'')
       });
       return;
@@ -267,10 +268,37 @@ function beginRecoveryAttempt(prompt,snap,beforeUsers,beforeAssistants){
     stagedAt:now(),
     beforeUsers,
     beforeAssistants,
+    beforeUserHash:hash(latestText(users())),
     beforeAssistantHash:hash(latestText(assistants()))
   };
   S.recoveryAttempt=attempt;
   return attempt;
+}
+function recoveryAcceptanceObserved(attempt=S.recoveryAttempt){
+  if(!attempt)return'';
+  if(users().length>attempt.beforeUsers)return'new-user-turn';
+  // Virtualized/replaced turns can preserve the same count even when a
+  // submitted user message is new. A new user-text fingerprint is positive
+  // chat progression; it is NOT proof that Ghost's exact probe was sent.
+  const current=hash(latestText(users()));
+  return current!==attempt.beforeUserHash?'changed-user-turn':'';
+}
+function observeActiveRecovery(snap,attempt=S.recoveryAttempt){
+  if(!attempt)return false;
+  const host=hostControlState();
+  const active=hostBusy(host)||generating();
+  const assistantMoved=assistants().length>attempt.beforeAssistants
+    ||hash(latestText(assistants()))!==attempt.beforeAssistantHash;
+  if(!active&&!assistantMoved)return false;
+  // Outcome is still unknown. Freeze this recovery episode and monitor
+  // progress; do not claim Send success, re-stage, replay, or lock HUMAN
+  // merely because the UI is actively generating.
+  markAttempt(snap);
+  S.recovering=false;
+  renderWebState(snap,active
+    ?'ChatGPT đang xử lý sau recovery attempt; đang quan sát, không xác nhận Send và không gửi lại.'
+    :'Có phản hồi assistant mới sau recovery attempt; không gửi lại, để Core đọc trạng thái.');
+  return true;
 }
 function managedRecoveryDraft(value,snap,attempt=S.recoveryAttempt){
   const t=norm(value);
@@ -288,6 +316,7 @@ function verifiedFailedSend(snap,{beforeUsers,beforeAssistants,attempt=S.recover
     explicitFailureType,
     notGenerating:!generating(),
     userCountStable:users().length===beforeUsers,
+    userTextStable:!attempt||hash(latestText(users()))===attempt.beforeUserHash,
     assistantCountStable:assistants().length===beforeAssistants,
     assistantTextStable:!attempt||hash(latestText(assistants()))===attempt.beforeAssistantHash,
     ownedRecoveryAttempt:recoveryAttemptOwned(snap,attempt)
@@ -562,7 +591,7 @@ async function sendRecoveryProbe(snap) {
 
   const verifyMs=snap.streamDesync?CFG.streamSendVerifyMs:CFG.sendVerifyMs;
   let accepted = await wait(
-    () => users().length > beforeUsers,
+    () => !!recoveryAcceptanceObserved(attempt),
     verifyMs
   );
   if(!RT.alive()){S.recovering=false;return}
@@ -623,7 +652,7 @@ async function sendRecoveryProbe(snap) {
         return;
       }
       accepted=await wait(
-        () => users().length > beforeUsers,
+        () => !!recoveryAcceptanceObserved(attempt),
         verifyMs
       );
       if(!RT.alive()){S.recovering=false;return}
@@ -633,10 +662,11 @@ async function sendRecoveryProbe(snap) {
           explicitFailureExhausted(snap,verdict);
           return;
         }
+        if(observeActiveRecovery(snap,attempt))return;
         requireHuman(
           snap,
           'Recovery retry không được xác nhận và evidence không còn chứng minh send FAILED. Outcome thật sự uncertain; cần kiểm tra thủ công.',
-          {source:'web-recovery',transient:'WEB_SEND_UNCERTAIN',autoReconcile:true,baselineUsers:beforeUsers,baselineAssistants:beforeAssistants,faultKey:snap.key}
+          {source:'web-recovery',transient:'WEB_SEND_UNCERTAIN',autoReconcile:true,baselineUsers:beforeUsers,baselineAssistants:beforeAssistants,baselineAssistantHash:attempt.beforeAssistantHash,faultKey:snap.key}
         );
         return;
       }
@@ -644,10 +674,11 @@ async function sendRecoveryProbe(snap) {
       explicitFailureExhausted(snap,verdict);
       return;
     }else{
+      if(observeActiveRecovery(snap,attempt))return;
       requireHuman(
         snap,
         'Status probe không được xác nhận và không đủ bằng chứng chứng minh send FAILED. Outcome thật sự uncertain; cần kiểm tra thủ công.',
-        {source:'web-recovery',transient:'WEB_SEND_UNCERTAIN',autoReconcile:true,baselineUsers:beforeUsers,baselineAssistants:beforeAssistants,faultKey:snap.key}
+        {source:'web-recovery',transient:'WEB_SEND_UNCERTAIN',autoReconcile:true,baselineUsers:beforeUsers,baselineAssistants:beforeAssistants,baselineAssistantHash:attempt.beforeAssistantHash,faultKey:snap.key}
       );
       return;
     }

@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.23`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.24`.
 
 ## Added behavior
 
@@ -489,3 +489,17 @@ Alert Router/Telegram add semantic episode deduplication, including repeated COR
 Regression coverage includes stale global status, scoped status TTL, genuine Stop, ready/disabled Send, Stop↔Send transition, stream faults, prompt preservation, deduped desktop/Telegram events, runtime lifecycle cleanup, and a browser fixture proving that a non-ChatGPT hostname cannot boot the Ghost runtime or panel.
 
 **Boundary:** Chromium browser cases are synthetic fixtures, not certification of the user's logged-in ChatGPT tab. The older Firefox generated artifact check remains baseline-broken and is separate from this Ghost+ Tampermonkey release.
+
+## v0.15.24 outside-form ChatGPT action controls / safe adoption
+
+This release fixes `PLAY-HOST-CONTROL` when the visible ChatGPT Stop square or Send action exists *outside* the exact HTML `form` containing the composer.
+
+- Stop/Send controls are resolved first in the active composer root; a fallback scans buttons within a constrained spatial envelope around the **right edge** of that composer. This supports React siblings/portals without selecting arbitrary toolbar buttons.
+- Visual square Stop glyph is supported for nearby controls in the same composer container; labeled Stop is accepted only within that spatial envelope. A Stop button elsewhere in the page is ignored even if it says "Stop streaming".
+- Nearby out-of-form Send requires explicit semantic identity; an unlabeled icon cannot be guessed as Send. A real Stop always supersedes Send. All actuation remains at-most-once with exact draft verification.
+- Play on a running turn adopts it without creating a new user message. On an already submitted user turn, or an existing `/c/...` chat with virtualized turns, Play may arm read-only monitoring rather than demanding that the operator type the task again. It never assumes missing output is permission to resend.
+- Ghost Export now includes a safe `hostControl` diagnostic object containing mode/reason/ready/source, without composer text, conversation content or DOM nodes.
+- The global strong-BUSY scan has been removed in favor of composer-linked Stop evidence; stale or unrelated Stop controls no longer hold the loop BUSY.
+- Chromium fixture tests verify outside-form semantic Stop, unlabeled square Stop, outside-form Send exactly once, unrelated Stop rejection, waiting on existing user/virtualized chats, stream faults, and draft safety.
+
+**Deployment:** update the Tampermonkey script to v0.15.24 and reload ChatGPT tabs. The authenticated live ChatGPT DOM still requires operator-side confirmation after the update.

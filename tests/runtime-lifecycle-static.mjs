@@ -81,7 +81,7 @@ assert.match(manager,/domChatGptFaultSuppressesWeakBusy/,'terminal stream faults
 assert.match(manager,/mode:'idle',busy:false/,'Resume\/delivery terminal faults without Stop must resolve fault-idle');
 assert.match(manager,/recoverable-stream-fault-idle/,'fault-idle provenance missing');
 assert.match(manager,/mode:'uncertain'/,'unresolved host controls must fail closed');
-assert.match(loader,/ghostplus\.15\.26/);
+assert.match(loader,/ghostplus\.15\.27/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);
@@ -203,6 +203,9 @@ assert.match(webRecovery,/verifiedFailureRetryMax:\s*1/,'verified SEND_TIMEOUT r
 assert.match(webRecovery,/const explicitFailureType=error\.type==='SEND_TIMEOUT'/,'only an explicit SEND_TIMEOUT may prove a recovery send failed');
 assert.match(webRecovery,/retryVisible:error\.retryVisible===true/,'Retry button must remain corroborating evidence');
 assert.match(webRecovery,/userCountStable:users\(\)\.length===beforeUsers/,'user-count evidence missing');
+assert.match(webRecovery,/userTextStable:/,'failed Send verification must check stable user text');
+assert.match(webRecovery,/recoveryAcceptanceObserved\(attempt\)/,'recovery must observe new text in virtualized turns');
+assert.match(webRecovery,/observeActiveRecovery\(snap,attempt\)/,'active recovery must be observation-only without HUMAN escalation');
 assert.match(webRecovery,/assistantCountStable:assistants\(\)\.length===beforeAssistants/,'assistant-count evidence missing');
 assert.match(webRecovery,/ownedRecoveryAttempt:recoveryAttemptOwned\(snap,attempt\)/,'owned recovery-attempt evidence missing');
 assert.match(webRecovery,/S\.verifiedFailureRetries < CFG\.verifiedFailureRetryMax/,'controlled retry path missing');
@@ -218,9 +221,11 @@ assert.match(gateRuntime,/chatgptHostControlState/,'Operator Gate must share the
 assert.match(gateRuntime,/mode==='send'\|\|host\?\.mode==='idle'/,'Operator Gate must let explicit fault-idle override stale Watchdog BUSY text');
 assert.match(gateRuntime,/GATE_AUTO_RECONCILED/,'transient gate auto-clear event missing');
 assert.match(gateRuntime,/if\(busy\)\{/,'busy late-accept must adopt active turn');
+assert.match(gateRuntime,/if\(!userAdvanced&&!assistantAdvanced&&!assistantTextAdvanced\)return false/,'BUSY alone must not auto-clear transient gate');
+assert.match(gateRuntime,/transient==='WEB_SEND_UNCERTAIN'/,'manual Resume while generating must adopt only');
 assert.doesNotMatch(gateRuntime,/transient:'WEB_SEND_UNCERTAIN'.*\[\[GITL::HUMAN\]\]/s,'assistant HUMAN must remain hard');
 assert.match(webRecovery,/transient:'WEB_SEND_UNCERTAIN'/,'web recovery uncertainty must mark transient gate provenance');
-assert.match(webRecovery,/baselineUsers:beforeUsers,baselineAssistants:beforeAssistants/,'web recovery uncertainty must carry message baselines');
+assert.match(webRecovery,/baselineUsers:beforeUsers,baselineAssistants:beforeAssistants,baselineAssistantHash:/,'uncertain recovery must carry baseline assistant fingerprint');
 
 assert.match(webRecovery,/kết nối bị gián đoạn/,'connection interrupted Vietnamese detector missing');
 assert.match(webRecovery,/đang chờ câu trả lời hoàn chỉnh/,'waiting-for-complete-response detector missing');
@@ -241,7 +246,7 @@ assert.match(webRecovery,/waitChatgptSendReady/,'Web Recovery must wait for a re
 assert.match(webRecovery,/const sendReady=hostAfterStage\?\.mode==='send'/,'Web Recovery must re-check ready Send state after staging');
 assert.match(webRecovery,/const retryReady=retryHost\?\.mode==='send'/,'verified retry must independently re-check ready Send state');
 assert.match(webRecovery,/clearComposerIfExact/,'Web Recovery must clear only its own exact staged probe when BUSY wins');
-assert.match(webRecovery,/\(\) => users\(\)\.length > beforeUsers/,'Web Recovery acceptance must require a new user turn, not BUSY alone');
+assert.match(webRecovery,/\(\) => !!recoveryAcceptanceObserved\(attempt\)/,'Web Recovery must require positive chat progress, not just BUSY');
 assert.match(webRecovery,/STREAM_RESUME_UNAVAILABLE/,'Web Recovery must quarantine Resume stream unavailable');
 assert.match(webRecovery,/MESSAGE_DELIVERY_TIMEOUT/,'Web Recovery must quarantine message delivery timeout');
 assert.match(webRecovery,/\['STREAM_RESUME_UNAVAILABLE','MESSAGE_DELIVERY_TIMEOUT','CONNECTION_INTERRUPTED'\]/,'connection interruption must share the stream-desync quarantine');

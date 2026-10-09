@@ -2,7 +2,7 @@
 'use strict';
 
 const ROOT='__ghostPlusRuntime';
-const VERSION='0.15.26';
+const VERSION='0.15.27';
 const previous=window[ROOT];
 try { if(previous?.active && typeof previous.destroy==='function') previous.destroy('reinject'); } catch (_) {}
 // Fail closed even if an older Tampermonkey installation still injects this loader

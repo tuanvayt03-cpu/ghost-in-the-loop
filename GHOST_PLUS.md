@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.24`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.25`.
 
 ## Added behavior
 
@@ -503,3 +503,20 @@ This release fixes `PLAY-HOST-CONTROL` when the visible ChatGPT Stop square or S
 - Chromium fixture tests verify outside-form semantic Stop, unlabeled square Stop, outside-form Send exactly once, unrelated Stop rejection, waiting on existing user/virtualized chats, stream faults, and draft safety.
 
 **Deployment:** update the Tampermonkey script to v0.15.24 and reload ChatGPT tabs. The authenticated live ChatGPT DOM still requires operator-side confirmation after the update.
+
+## v0.15.25 completed assistant-output detection
+
+The Ghost Play panel previously displayed `RUNNING · Waiting for assistant output...` although the ChatGPT page visibly showed a finished assistant response. The previous extractor only matched `article[data-testid*="conversation-turn"]` and selected the first `.markdown` per turn; this missed responses with alternate author wrappers and lost trailing blocks/terminal markers.
+
+This release:
+- combines recognized conversation-turn articles and explicit author-role containers even when both layouts coexist;
+- reads every top-level Markdown block in document order, preserving the trailing terminal marker and text after tables;
+- recovers response text from roleless turn articles only when a local response Copy action exists;
+- provides a tightly scoped fallback for an assistant message wrapper that has no article/role attributes but still has a dedicated `copy-turn` or `copy-message` toolbar; a generic Copy button is not sufficient;
+- refuses to treat the previous assistant message as the new answer when a newer user message is the last visible turn;
+- arms monitoring rather than immediately sending a bootstrap continuation when Ghost Play finds an already visible assistant answer;
+- falls back to `textContent` if `innerText` is empty, while preserving the original Stop/Send, race and no-resend safety contracts.
+
+Regression fixtures include long answers with multiple Markdown blocks/table and trailing `HALT`, dynamically appearing assistant messages, roleless assistant replies, newer user turns, false-positive user quotes, and one-shot/Stop/adopt behavior.
+
+**Live boundary:** these are fresh isolated Chromium DOM simulations; the user's authenticated ChatGPT tab has not been certified until Tampermonkey is updated and the affected tab is reloaded.

@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.26`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.27`.
 
 ## Added behavior
 
@@ -530,3 +530,17 @@ Regression fixtures include long answers with multiple Markdown blocks/table and
 - Chat route changes and gate clear/unload restore an undecorated title without carrying state to another conversation.
 - The Alert Router consumes the same title normalization to avoid forwarding a decorated label as the chat name.
 - New browser tests cover repeated badges, missing name recovery, rename during Gate, SPA route change, cleanup, and RELAY coloring. Host-control safety and no-resend behavior are unchanged.
+
+## v0.15.27 evidence-based recovery reconciliation
+
+This release integrates recovery fixes with the existing v0.15.26 task-name/badge behavior.
+
+- Web Recovery no longer uses only an increase in the user-turn count to detect chat progression. Replaced/virtualized turns may retain the same count while the latest user-turn text changes. Either positive signal stops retrying. Neither alone claims the exact recovery probe was delivered.
+- Verified Send failure still requires an explicit SEND_TIMEOUT and stable user/assistant count and content, a currently non-generating host, and an owned recovery attempt.
+- When a recovery outcome is uncertain but ChatGPT is visibly working or its assistant output has advanced, the recovery episode stays frozen and **no new prompt is sent or replayed**.
+- A transient WEB_SEND_UNCERTAIN Operator Gate is never cleared just because a Stop square appeared. Its automatic reconciliation requires positive new conversation progress.
+- Explicit operator Resume during active generation may release only this specific transient gate and adopt the current turn, without staging a recovery probe. AUTH_ERROR and other hard gates remain locked.
+- The panel distinguishes Ghost-paused from ChatGPT-generating.
+- Existing ChatGPT-only scope, user draft preservation and task-preserving browser title behavior are unchanged.
+
+The field screenshot was still showing v0.15.24. Update Tampermonkey and reload the ChatGPT tab before checking v0.15.27. Automated tests do not substitute for verification on the authenticated live tab.

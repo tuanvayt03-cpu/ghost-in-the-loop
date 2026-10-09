@@ -646,3 +646,101 @@ test('Tampermonkey loader, embedded core and Firefox manifest are ChatGPT-only',
   const manifest=JSON.parse(fs.readFileSync(path.join(root,'extension','manifest.json'),'utf8'));
   expect(manifest.content_scripts[0].matches).toEqual(['https://chatgpt.com/*','https://chat.openai.com/*']);
 });
+
+test('reads all markdown blocks in a completed assistant reply and retains the last terminal line',()=>{
+  document.body.innerHTML=`
+  <main>
+    <article data-testid="conversation-turn-10" aria-label="You said:">Continue study</article>
+    <article data-testid="conversation-turn-11" aria-label="ChatGPT said:">
+      <div class="markdown"><h3>Trader results</h3><table><tr><td>Stable Growth 3</td><td>20.53%</td></tr></table></div>
+      <div class="markdown"><p>Git commit pushed successfully</p></div>
+      <div class="markdown"><p>Checkpoint saved.</p><p>[[GITL::HALT]]</p></div>
+    </article>
+  </main>`;
+  document.querySelectorAll('article').forEach(el=>show(el,{top:220}));
+  const rt=boot(),text=rt.dom.latestChatgptAssistantText();
+  expect(text).toContain('Trader results');
+  expect(text).toContain('Git commit pushed successfully');
+  expect(text).toContain('Checkpoint saved.');
+  expect(text.endsWith('[[GITL::HALT]]')).toBe(true);
+});
+
+test('finds an assistant author container when user and assistant have different wrappers',()=>{
+  document.body.innerHTML=`
+  <main>
+    <article data-testid="conversation-turn-10" aria-label="You said:">Please continue</article>
+    <section data-message-author-role="assistant">
+      <div class="markdown">Work done.</div><div class="markdown">[[GITL::PROCEED]]</div>
+    </section>
+  </main>`;
+  document.querySelectorAll('article,section').forEach(el=>show(el,{top:220}));
+  const rt=boot();
+  expect(rt.dom.chatgptTurns().map(x=>x.role)).toEqual(['user','assistant']);
+  expect(rt.dom.latestChatgptAssistantText()).toContain('[[GITL::PROCEED]]');
+});
+
+test('uses a local assistant copy-action as fallback when a turn loses its role attribute',()=>{
+  document.body.innerHTML=`
+  <main>
+    <article data-testid="conversation-turn-10" aria-label="You said:">next?</article>
+    <article data-testid="conversation-turn-11">
+      <div class="markdown">The simulation is complete.</div>
+      <div class="markdown">There are zero copy-ready accounts.</div>
+      <button aria-label="Copy" data-testid="copy-turn-action-button">Copy</button>
+    </article>
+  </main>`;
+  document.querySelectorAll('article,button').forEach(el=>show(el,{top:220}));
+  const rt=boot();
+  expect(rt.dom.latestChatgptAssistantText()).toContain('The simulation is complete.');
+  expect(rt.dom.latestChatgptAssistantText()).toContain('There are zero copy-ready accounts.');
+});
+
+test('never infers assistant output from a user quote or an unrelated markdown panel',()=>{
+  document.body.innerHTML=`
+  <main>
+    <article data-testid="conversation-turn-10" aria-label="You said:"><div class="markdown">[[GITL::HALT]]</div></article>
+    <div class="unrelated-panel"><div class="markdown">Summary posted</div><button aria-label="Copy">Copy</button></div>
+  </main>`;
+  document.querySelectorAll('article,.unrelated-panel,button').forEach(el=>show(el,{top:220}));
+  const rt=boot();
+  expect(rt.dom.latestChatgptAssistantText()).toBe('');
+  expect(rt.dom.chatgptTurns().map(x=>x.role)).toEqual(['user']);
+});
+
+test('recovers an assistant answer whose article/role wrapper disappeared but turn copy action survives',()=>{
+  document.body.innerHTML=`
+  <main>
+    <article data-testid="conversation-turn-8" aria-label="You said:">Scan the trader dataset</article>
+    <div class="group assistant-result">
+      <div><div class="markdown">I processed 45 scenarios.</div></div>
+      <div class="reply-toolbar"><button data-testid="copy-turn-action-button" aria-label="Copy">Copy</button></div>
+    </div>
+  </main>`;
+  document.querySelectorAll('article,.assistant-result,button').forEach(el=>show(el,{top:220}));
+  const rt=boot();
+  expect(rt.dom.chatgptTurns().map(x=>x.role)).toEqual(['user','assistant']);
+  expect(rt.dom.latestChatgptAssistantText()).toBe('I processed 45 scenarios.');
+});
+
+test('an old assistant message is not mistaken for the answer to a newer user turn',()=>{
+  document.body.innerHTML=`
+  <main>
+    <article data-testid="conversation-turn-6" aria-label="ChatGPT said:"><div class="markdown">[[GITL::HALT]]</div></article>
+    <article data-testid="conversation-turn-7" aria-label="You said:">Please continue</article>
+  </main>`;
+  document.querySelectorAll('article').forEach(el=>show(el,{top:220}));
+  const rt=boot();
+  expect(rt.dom.chatgptTurns().map(x=>x.role)).toEqual(['assistant','user']);
+  expect(rt.dom.latestChatgptAssistantText()).toBe('');
+});
+
+test('a text block uses textContent when innerText is an empty string',()=>{
+  document.body.innerHTML=`
+  <main><article data-testid="conversation-turn-2" aria-label="ChatGPT said:">
+    <div class="markdown">Completed and saved. [[GITL::HALT]]</div>
+  </article></main>`;
+  show(document.querySelector('article'),{top:220});
+  Object.defineProperty(document.querySelector('.markdown'),'innerText',{configurable:true,value:''});
+  const rt=boot();
+  expect(rt.dom.latestChatgptAssistantText()).toContain('Completed and saved.');
+});

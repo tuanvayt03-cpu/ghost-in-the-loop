@@ -184,6 +184,56 @@ test.describe('Ghost+ authoritative ChatGPT host-control fault matrix', () => {
     expect(await host(page)).toMatchObject({mode:'idle',busy:false,ready:false});
   });
 
+
+  test('already completed multi-block answer is processed instead of Waiting for assistant output',async({page})=>{
+    await openFixture(page,
+      '<article data-testid="conversation-turn-1" aria-label="You said:">continue research</article>'+
+      '<article data-testid="conversation-turn-2" aria-label="ChatGPT said:">'+
+      '<div class="markdown"><h3>Trader results</h3><table><tr><td>Stable Growth</td><td>20%</td></tr></table></div>'+
+      '<div class="markdown">Research saved on GitHub.</div>'+
+      '<div class="markdown">[[GITL::HALT]]</div></article>'+
+      composer('<button aria-label="Start voice mode">voice</button>'),
+      {core:true}
+    );
+    await page.evaluate(()=>{
+      window.__voiceClicks=0;
+      document.querySelector('form button').addEventListener('click',()=>window.__voiceClicks++);
+    });
+    await page.locator('#gitl9 [data-a="play"]').click();
+    await expect(page.locator('#gitl9 .status')).toContainText('COMPLETE',{timeout:5000});
+    expect(await page.evaluate(()=>window.__voiceClicks)).toBe(0);
+  });
+
+  test('assistant appearing after Play under a different author wrapper is detected and completes',async({page})=>{
+    await openFixture(page,
+      '<article data-testid="conversation-turn-1" aria-label="You said:">continue task</article>'+
+      composer('<button aria-label="Start voice mode">voice</button>'),{core:true}
+    );
+    await page.locator('#gitl9 [data-a="play"]').click();
+    await expect(page.locator('#gitl9 .status')).toContainText('Waiting for assistant output');
+    await page.evaluate(()=>{
+      const answer=document.createElement('section');
+      answer.setAttribute('data-message-author-role','assistant');
+      answer.innerHTML='<div class="markdown">Results saved.</div><div class="markdown">[[GITL::HALT]]</div>';
+      document.querySelector('main').insertBefore(answer,document.querySelector('form'));
+    });
+    await expect(page.locator('#gitl9 .status')).toContainText('COMPLETE',{timeout:5500});
+  });
+
+  test('a visible assistant answer without a marker is monitored first, not immediately re-sent',async({page})=>{
+    await openFixture(page,
+      '<article data-testid="conversation-turn-1" aria-label="You said:">continue task</article>'+
+      '<article data-testid="conversation-turn-2">'+
+      '<div class="markdown">The report is already saved.</div>'+
+      '<button aria-label="Copy" data-testid="copy-turn-action-button">Copy</button></article>'+
+      composer('<button aria-label="Start voice mode">voice</button>'),{core:true}
+    );
+    await page.evaluate(()=>{window.__voiceClicks=0;document.querySelector('form button').addEventListener('click',()=>window.__voiceClicks++);});
+    await page.locator('#gitl9 [data-a="play"]').click();
+    await expect(page.locator('#gitl9 .status')).toContainText('Output quiet',{timeout:4000});
+    expect(await page.evaluate(()=>window.__voiceClicks)).toBe(0);
+  });
+
   test('ready Send with a staged user task dispatches once and only once', async ({ page }) => {
     await openFixture(page, composer(
       '<button id="composer-submit-button" data-testid="send-button" aria-label="Send prompt" type="button">↑</button>',

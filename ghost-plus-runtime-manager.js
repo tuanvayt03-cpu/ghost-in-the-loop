@@ -2,7 +2,7 @@
 'use strict';
 
 const ROOT='__ghostPlusRuntime';
-const VERSION='0.15.24';
+const VERSION='0.15.25';
 const previous=window[ROOT];
 try { if(previous?.active && typeof previous.destroy==='function') previous.destroy('reinject'); } catch (_) {}
 // Fail closed even if an older Tampermonkey installation still injects this loader
@@ -349,37 +349,95 @@ function domChatGptRole(node){
   let nested=null;
   try{nested=node.querySelector?.('[data-message-author-role],[data-author]')||null}catch(_){}
   if(nested&&nested!==node)return domChatGptRole(nested);
+  // ChatGPT UI variants may omit the outer aria-label. Only infer assistant
+  // from an actual conversation-turn container with its own response toolbar.
+  // Generic "Copy" buttons outside a turn are not role evidence.
+  try{
+    if(node.matches?.('[data-testid*="conversation-turn"]')
+      &&node.querySelector?.('.markdown')
+      &&node.querySelector?.('button[data-testid*="copy" i],button[aria-label="Copy"],button[aria-label="Sao chép"]'))
+      return'assistant';
+  }catch(_){}
   return'';
 }
 function domChatGptTurnText(node){
   if(!node)return'';
-  let content=node;
   try{
-    content=node.querySelector?.('[data-message-author-role] .markdown')
-      ||node.querySelector?.('.markdown')
-      ||node.querySelector?.('[data-message-author-role],[data-author]')
-      ||node;
+    // A response may contain many separate markdown blocks (tables, prose,
+    // and a trailing terminal marker). querySelector() silently loses all
+    // blocks after the first, preventing Ghost from seeing the completed turn.
+    const blocks=[...node.querySelectorAll('.markdown')].filter(el=>
+      el.isConnected&&!el.parentElement?.closest?.('.markdown')
+      &&!el.closest?.('#gitl9,[id^="ghostplus-"]')
+    );
+    if(blocks.length){
+      return domTurnText(blocks.map(el=>domTurnText(el.innerText)||domTurnText(el.textContent))
+        .filter(Boolean).join('\n'));
+    }
   }catch(_){}
+  let content=node;
+  try{content=node.querySelector?.('[data-message-author-role],[data-author]')||node}catch(_){}
   return domTurnText(content?.innerText??content?.textContent??'');
+}
+function domChatGptResponseFallbacks(root){
+  // Some ChatGPT variants render the answer without an article/author wrapper.
+  // A dedicated reply-copy control co-located with markdown is a second
+  // independent signal; ordinary Copy buttons must NOT certify a response.
+  const candidates=[];
+  try{
+    const buttons=root.querySelectorAll(
+      'button[data-testid*="copy-turn" i],button[data-testid*="copy-message" i]'
+    );
+    for(const button of buttons){
+      if(button.closest?.('#gitl9,[id^="ghostplus-"]'))continue;
+      let parent=button.parentElement;
+      for(let i=0;i<8&&parent&&parent!==root;i++,parent=parent.parentElement){
+        if(parent.matches?.('nav,aside,header,footer,form'))break;
+        if(!parent.querySelector?.('.markdown'))continue;
+        if(parent.querySelector?.('[data-message-author-role="user"],[data-turn="user"],article[aria-label^="You said"]'))break;
+        candidates.push(parent);
+        break;
+      }
+    }
+  }catch(_){}
+  return candidates;
 }
 function domChatGptTurns(){
   if(!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname))return[];
+  // The outer <article> and the role-bearing author element are not always
+  // the same node. Union both instead of only falling back when no articles
+  // exist at all; otherwise a visible last assistant answer is missed.
   let nodes=[];
-  try{nodes=[...document.querySelectorAll(CHATGPT_TURN_SELECTOR)].filter(x=>x.isConnected)}catch(_){}
-  if(!nodes.length){
-    try{nodes=[...document.querySelectorAll('[data-message-author-role],[data-author],[data-turn="user"],[data-turn="assistant"]')].filter(x=>x.isConnected)}catch(_){}
-  }
-  const rows=[];
-  for(const el of nodes){
-    const role=domChatGptRole(el);if(!role)continue;
-    const text=domChatGptTurnText(el);if(!text)continue;
-    rows.push(Object.freeze({role,text,el}));
-  }
-  return rows;
+  try{
+    const root=document.querySelector('main')||document;
+    nodes=[...root.querySelectorAll(
+      CHATGPT_TURN_SELECTOR+',[data-message-author-role],[data-author],[data-turn="user"],[data-turn="assistant"],article[aria-label^="ChatGPT said"],article[aria-label^="You said"]'
+    )].filter(x=>x.isConnected&&!x.closest?.('#gitl9,[id^="ghostplus-"]'));
+    const inferred=domChatGptResponseFallbacks(root);
+    const known=new Set(nodes);
+    for(const el of inferred)if(!known.has(el)){nodes.push(el);known.add(el)}
+    nodes.sort((a,b)=>{
+      const position=a.compareDocumentPosition?.(b)||0;
+      return position&4?-1:position&2?1:0;
+    });
+    const inferredSet=new Set(inferred);
+    const rows=[];
+    for(const el of nodes){
+      if(nodes.some(parent=>parent!==el&&parent.contains?.(el)))continue;
+      const role=domChatGptRole(el)||(inferredSet.has(el)?'assistant':'');
+      if(!role)continue;
+      const text=domChatGptTurnText(el);if(!text)continue;
+      rows.push(Object.freeze({role,text,el}));
+    }
+    return rows;
+  }catch(_){}
+  return[];
 }
 function domLatestChatGptAssistantText(){
-  const rows=domChatGptTurns().filter(x=>x.role==='assistant');
-  return rows.length?rows[rows.length-1].text:'';
+  const rows=domChatGptTurns();
+  // The last visible message being user means that the assistant has not
+  // replied to *that* turn yet. Never reprocess an older assistant result.
+  return rows.length&&rows[rows.length-1].role==='assistant'?rows[rows.length-1].text:'';
 }
 function domChatGptUserCount(){return domChatGptTurns().filter(x=>x.role==='user').length}
 const CHATGPT_PENDING_RE=/(đang\s+(suy nghĩ|truy vấn|tìm|phân tích|xử lý|tải|chạy|gọi|thực thi|duyệt))|\b(thinking|searching|querying|analyzing|processing|working|running|retrieving|calling\s+(a\s+)?tool|using\s+(a\s+)?tool|browsing|fetching|resuming)\b/i;

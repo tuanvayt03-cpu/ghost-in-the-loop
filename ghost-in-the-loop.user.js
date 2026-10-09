@@ -611,8 +611,14 @@ async function play() {
   } else if (parsed.type !== 'bad') {
     S.bootstrapped = true; S.stableHash = hash(latest); S.stableSince = now() - VALID_QUIET_MS;
   } else {
+    // The last assistant answer is already visible. Observe its terminal
+    // state before creating any new user turn. A missing marker is handled
+    // by the existing quiet/drift safety policy rather than an immediate
+    // bootstrap Send on every Play click.
     S.bootstrapped = true;
-    if (!await sendOnce(bootstrapPrompt('Continue the existing task from this conversation without restarting or repeating completed work.'), 'arm existing chat')) return;
+    S.detail = 'Existing assistant output detected · verifying terminal state';
+    log('adopt-existing-assistant-turn',{hostMode:String(hostState?.mode||'')});
+    render();
   }
   RT.clearInterval(S.timer);
   S.timer = RT.interval(() => { tick().catch(error => fail('PLAY-TICK', String(error?.message || error))); }, TICK_MS);

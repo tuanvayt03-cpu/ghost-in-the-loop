@@ -57,13 +57,18 @@ assert.match(manager,/clearComposerIfExact/,'managed staged-draft cleanup helper
 assert.match(manager,/CHATGPT_STOP_SELECTORS/,'explicit ChatGPT Stop control contract missing');
 assert.match(manager,/domChatGptStopGlyph/,'square Stop glyph fallback missing');
 assert.match(manager,/domChatGptPrimaryFallback/,'composer-local primary action fallback missing');
+assert.match(manager,/function domChatGptNearbyActions\(/,'portal/sibling controls must be spatially scoped to the composer');
+assert.match(manager,/const left=Math.max\(base.left-50,base.right-240\)/,'outside-form control search must stay near composer right edge');
+assert.match(manager,/domChatGptNearbyActions\(root\)\.filter\(x=>x\.meta\.stop\|\|x\.glyph\)/,'outside-form Stop must be available to host resolver');
+assert.match(manager,/for\(const \{el,meta,glyph\} of domChatGptNearbyActions\(root\)\)/,'outside-form semantic Send must be available to host resolver');
+assert.match(manager,/const activeStop=domChatGptExplicitStop\(\)/,'BUSY cannot be inferred from arbitrary global Stop buttons');
 assert.match(manager,/mode:'stop',busy:true/,'host Stop must resolve as BUSY');
 assert.match(manager,/mode:'send',busy:false/,'host Send must resolve as IDLE\/send-capable');
 assert.match(manager,/domChatGptFaultSuppressesWeakBusy/,'terminal stream faults must be able to suppress stale weak BUSY evidence');
 assert.match(manager,/mode:'idle',busy:false/,'Resume\/delivery terminal faults without Stop must resolve fault-idle');
 assert.match(manager,/recoverable-stream-fault-idle/,'fault-idle provenance missing');
 assert.match(manager,/mode:'uncertain'/,'unresolved host controls must fail closed');
-assert.match(loader,/ghostplus\.15\.23/);
+assert.match(loader,/ghostplus\.15\.24/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);
@@ -151,6 +156,8 @@ assert.match(playBody,/if \(adoptActive \|\| generating\(\)\)/,'active host turn
 assert.match(playBody,/Adopted active ChatGPT turn/,'active host turn adopt detail missing');
 assert.ok(playBody.indexOf("const adoptActive=HOST.id==='chatgpt'&&hostBusy(hostState)") < playBody.indexOf("} else if (draft.trim())"),'Stop\/BUSY adoption must be decided before draft bootstrap Send');
 assert.match(playBody,/PLAY-HOST-CONTROL/,'unresolved Stop\/Send state must block instead of guessing');
+assert.match(playBody,/adopt-existing-conversation/,'Play must monitor already submitted or virtualized chats without resending');
+assert.match(core,/hostControl,/,'diagnostic export must report sanitized host-control mode');
 assert.match(core,/latestChatgptAssistantText/,'core must read current ChatGPT turn contract');
 assert.match(core,/chatgptUserCount/,'core must use shared ChatGPT user count');
 assert.match(core,/chatgptHostControlState/,'core Play must consume shared Stop\/Send host state');

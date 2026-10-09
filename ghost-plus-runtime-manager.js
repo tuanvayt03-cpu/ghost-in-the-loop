@@ -2,7 +2,7 @@
 'use strict';
 
 const ROOT='__ghostPlusRuntime';
-const VERSION='0.15.23';
+const VERSION='0.15.24';
 const previous=window[ROOT];
 try { if(previous?.active && typeof previous.destroy==='function') previous.destroy('reinject'); } catch (_) {}
 // Fail closed even if an older Tampermonkey installation still injects this loader
@@ -416,23 +416,10 @@ function domChatGptActivitySurface(el,lastAssistant,composerRoot){
 }
 function domChatGptActivityState(){
   if(!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname))return{busy:false,strong:false,reason:'unsupported-host'};
-  const strongSelectors=[
-    '#composer-submit-button[data-testid="stop-button"]',
-    'button[data-testid="stop-button"]',
-    'button[aria-label="Stop generating"]',
-    'button[aria-label="Stop streaming"]',
-    'button[aria-label="Stop responding"]'
-  ];
-  for(const selector of strongSelectors){
-    let nodes=[];try{nodes=[...document.querySelectorAll(selector)]}catch(_){}
-    if(nodes.some(el=>domVisible(el)&&!el.closest?.('#gitl9,[id^="ghostplus-"]')))return{busy:true,strong:true,reason:'native-stop'};
-  }
-  let controls=[];try{controls=[...document.querySelectorAll('button,[role="button"],[aria-label]')]}catch(_){}
-  for(const control of controls){
-    if(!domVisible(control)||control.closest?.('#gitl9,[id^="ghostplus-"]'))continue;
-    const label=String(control.getAttribute?.('aria-label')||'');
-    if(/Stop generating|Stop streaming|Stop responding|停止生成|正在思考/i.test(label))return{busy:true,strong:true,reason:'semantic-stop'};
-  }
+  // Only composer-linked Stop may establish strong generation evidence.
+  // A global Stop button in another panel/turn must never lock Ghost BUSY.
+  const activeStop=domChatGptExplicitStop();
+  if(activeStop)return{busy:true,strong:true,reason:'composer-stop'};
 
   const fault=domChatGptFaultState();
   if(domChatGptFaultSuppressesWeakBusy(fault.type)){
@@ -737,7 +724,48 @@ function domChatGptSendCandidates(){
     const composerHasText=!!domReadComposer();
     if(meta.send||composerHasText)out.push({el:fallback.el,meta:{...meta,send:true,stop:false},score:Math.max(900,fallback.score)});
   }
+  // The live ChatGPT action may be a sibling of the composer form.
+  // Outside the form we require explicit Send semantics; never guess from
+  // an arbitrary unlabeled arrow/voice control.
+  for(const {el,meta,glyph} of domChatGptNearbyActions(root)){
+    if(seen.has(el)||!meta.send||meta.stop||glyph)continue;
+    seen.add(el);
+    out.push({el,meta,score:meta.testid==='send-button'?1900:meta.id==='composer-submit-button'?1850:1400});
+  }
   return out.sort((a,b)=>b.score-a.score);
+}
+function domChatGptNearbyActions(root=domChatGptSendRoot()){
+  // React can portal the active Stop/Send action into a sibling of the form.
+  // Search by a small, composer-anchored spatial envelope, not page-wide text.
+  const composer=domComposer();
+  if(!root||!composer)return[];
+  let base=null;try{base=root.getBoundingClientRect?.()}catch(_){}
+  if(!base||base.width<1||base.height<1){
+    try{base=composer.getBoundingClientRect?.()}catch(_){}
+  }
+  if(!base||base.width<1||base.height<1)return[];
+  const top=base.top-96,bottom=base.bottom+96;
+  const left=Math.max(base.left-50,base.right-240),right=base.right+110;
+  const result=[];
+  let nodes=[];try{nodes=[...document.querySelectorAll('button,[role="button"]')]}catch(_){}
+  for(const el of nodes){
+    if(root.contains?.(el)||!domRendered(el)||el.closest?.('#gitl9,[id^="ghostplus-"]'))continue;
+    if(el.closest?.('form')&&el.closest('form')!==root)continue;
+    let r=null;try{r=el.getBoundingClientRect?.()}catch(_){}
+    if(!r||r.width<16||r.height<16||r.width>100||r.height>100)continue;
+    const cx=(r.left+r.right)/2,cy=(r.top+r.bottom)/2;
+    if(cx<left||cx>right||cy<top||cy>bottom)continue;
+    const meta=domChatGptSendMeta(el);
+    const glyph=domChatGptStopGlyph(el);
+    const nearbyContainer=root.parentElement&&(
+      root.parentElement.contains(el)||root.parentElement.parentElement?.contains(el)
+    );
+    // Icon-only fallback requires the same nearby composer container;
+    // a semantic Stop label is still spatially constrained.
+    if(!meta.stop&&!meta.send&&!(glyph&&nearbyContainer))continue;
+    result.push({el,meta,glyph});
+  }
+  return result;
 }
 function domChatGptExplicitStop(root=domChatGptSendRoot()){
   if(!root)return null;
@@ -747,7 +775,8 @@ function domChatGptExplicitStop(root=domChatGptSendRoot()){
   }
   const fallback=domChatGptPrimaryFallback(root);
   if(fallback&&domChatGptStopGlyph(fallback.el))return fallback.el;
-  return null;
+  const nearby=domChatGptNearbyActions(root).filter(x=>x.meta.stop||x.glyph);
+  return nearby.length===1?nearby[0].el:null;
 }
 function domChatGptHostControlState(){
   if(!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname))return{mode:'unsupported',busy:false,ready:false,found:false,why:'unsupported-host',el:null};

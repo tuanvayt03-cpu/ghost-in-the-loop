@@ -596,7 +596,18 @@ async function play() {
     S.bootstrapped = true; if (!await sendOnce(bootstrapPrompt(draft), 'initial task')) return;
   } else if (!latest) {
     const seenUsers=userCount();
-    pause(seenUsers ? 'Existing chat detected, but the latest assistant turn could not be resolved safely.' : 'Type a task into the chat first, then press Play.'); return;
+    const existingChat=HOST.id==='chatgpt'&&/^\/c\/[a-z0-9-]{8,}(?:\/|$)/i.test(location.pathname);
+    if(!seenUsers&&!existingChat){
+      pause('Type a task into the chat first, then press Play.');return;
+    }
+    // The current chat may have a submitted user turn or a virtualized
+    // conversation with no immediately readable turns. Arm monitoring only.
+    // No Send or recovery replay is justified by this missing DOM evidence.
+    S.bootstrapped=true;
+    S.detail=seenUsers?'Existing user turn detected · awaiting assistant output without resending'
+      :'Existing chat detected · monitoring only until a turn becomes visible';
+    log('adopt-existing-conversation',{seenUsers,existingChat,hostMode:String(hostState?.mode||'')});
+    render();
   } else if (parsed.type !== 'bad') {
     S.bootstrapped = true; S.stableHash = hash(latest); S.stableSince = now() - VALID_QUIET_MS;
   } else {
@@ -704,9 +715,17 @@ async function doExport(kind) {
 }
 
 function report() {
+  const host=chatgptHostControl();
+  // Safe host diagnostics: no composer text, conversation content or DOM nodes.
+  const hostControl=HOST.id==='chatgpt'?{
+    mode:String(host?.mode||'missing'),why:String(host?.why||'unknown'),
+    source:String(host?.source||'none'),busy:!!host?.busy,ready:!!host?.ready,
+    found:!!host?.found,activityReason:String(host?.activityReason||'').slice(0,100)
+  }:null;
   return {
     product: 'Ghost in the Loop', version: VER, platform: HOST.id, state: S.mode, round: S.round, maxRounds: S.max,
     sending: S.sending, uncertain: S.uncertain, driftCount: S.drift,
+    hostControl,
     capabilities: { input: !!composer(), send: !!localSendButton(), stop: generating(), assistant: !!assistantText() },
     lastError: S.lastError, relayRequested: S.relay || null, events: S.events.slice(-20), when: new Date().toISOString()
   };

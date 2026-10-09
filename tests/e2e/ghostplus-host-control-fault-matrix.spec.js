@@ -81,6 +81,109 @@ test.describe('Ghost+ authoritative ChatGPT host-control fault matrix', () => {
     expect(await page.evaluate(() => window.__host.clicks)).toBe(0);
   });
 
+
+  test('real Stop rendered as a sibling outside the composer form is adopted without a new send',async({page})=>{
+    await openFixture(page,
+      '<article data-testid="conversation-turn-1" aria-label="You said:">tiếp đi</article>'+
+      '<section class="composer-shell" style="position:fixed;left:20%;right:20%;bottom:20px">'+
+      '<form data-type="unified-composer" style="position:static;width:100%">'+
+      '<div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT"></div>'+
+      '</form>'+
+      '<button id="outside-stop" aria-label="Stop streaming" style="position:absolute;right:8px;bottom:8px">■</button>'+
+      '</section>',
+      {core:true}
+    );
+    expect(await host(page)).toMatchObject({mode:'stop',busy:true});
+    await page.evaluate(()=>{
+      window.__stopClicked=0;
+      document.getElementById('outside-stop').addEventListener('click',()=>window.__stopClicked++);
+    });
+    await page.locator('#gitl9 [data-a="play"]').click();
+    await expect(page.locator('#gitl9 .status')).toContainText('RUNNING');
+    await expect(page.locator('#gitl9 .status')).toContainText('Model working...');
+    expect(await page.evaluate(()=>window.__stopClicked)).toBe(0);
+  });
+
+  test('SVG square Stop rendered beside the composer but without labels is still BUSY',async({page})=>{
+    await openFixture(page,
+      '<section class="composer-shell" style="position:fixed;left:20%;right:20%;bottom:20px">'+
+      '<form data-type="unified-composer" style="position:static;width:100%">'+
+      '<div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT"></div>'+
+      '</form>'+
+      '<button id="outside-glyph" style="position:absolute;right:8px;bottom:8px">'+
+      '<svg viewBox="0 0 24 24" width="20" height="20"><rect x="7" y="7" width="10" height="10"/></svg></button>'+
+      '</section>'
+    );
+    expect(await host(page)).toMatchObject({mode:'stop',busy:true});
+  });
+
+
+  test('an outside-form composer Send control is eligible for the one-shot send path',async({page})=>{
+    await openFixture(page,
+      '<section class="composer-shell" style="position:fixed;left:20%;right:20%;bottom:20px">'+
+      '<form data-type="unified-composer" style="position:static;width:100%">'+
+      '<div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT">do the next step</div>'+
+      '</form>'+
+      '<button id="outside-send" data-testid="send-button" aria-label="Send prompt" style="position:absolute;right:8px;bottom:8px">↑</button>'+
+      '</section>',
+      {core:true}
+    );
+    expect(await host(page)).toMatchObject({mode:'send',busy:false,ready:true});
+    await page.evaluate(()=>{
+      window.__sendClicked=0;
+      document.getElementById('outside-send').addEventListener('click',()=>{
+        window.__sendClicked++;
+        const article=document.createElement('article');
+        article.setAttribute('data-testid','conversation-turn-user-'+window.__sendClicked);
+        article.setAttribute('aria-label','You said:');
+        article.textContent=document.getElementById('prompt-textarea').textContent||'sent';
+        document.querySelector('main').prepend(article);
+        const btn=document.getElementById('outside-send');
+        btn.setAttribute('data-testid','stop-button');
+        btn.setAttribute('aria-label','Stop streaming');
+        btn.textContent='■';
+      });
+    });
+    await page.locator('#gitl9 [data-a="play"]').click();
+    await expect.poll(()=>page.evaluate(()=>window.__sendClicked)).toBe(1);
+    await page.waitForTimeout(350);
+    expect(await page.evaluate(()=>window.__sendClicked)).toBe(1);
+  });
+
+  test('existing user turn with no assistant and no Stop arms monitoring, never resends',async({page})=>{
+    await openFixture(page,
+      '<article data-testid="conversation-turn-1" aria-label="You said:">tiếp đi</article>'+
+      composer('<button aria-label="Start voice mode">voice</button>'),
+      {core:true}
+    );
+    await page.evaluate(()=>{window.__clicks=0;document.querySelector('form button').addEventListener('click',()=>window.__clicks++);});
+    await page.locator('#gitl9 [data-a="play"]').click();
+    await expect(page.locator('#gitl9 .status')).toContainText('RUNNING');
+    await expect(page.locator('#gitl9 .status')).toContainText('Waiting for assistant output');
+    expect(await page.evaluate(()=>window.__clicks)).toBe(0);
+  });
+
+
+  test('an existing routed chat whose turns are virtualized arms monitoring without fabricating a Send',async({page})=>{
+    await openFixture(page,composer('<button aria-label="Start voice mode">voice</button>'),{core:true});
+    await page.evaluate(()=>{
+      window.__voiceClicks=0;
+      document.querySelector('form button').addEventListener('click',()=>window.__voiceClicks++);
+    });
+    await page.locator('#gitl9 [data-a="play"]').click();
+    await expect(page.locator('#gitl9 .status')).toContainText('RUNNING');
+    await expect(page.locator('#gitl9 .status')).toContainText('Waiting for assistant output');
+    expect(await page.evaluate(()=>window.__voiceClicks)).toBe(0);
+  });
+
+  test('an unrelated Stop button elsewhere in the page cannot impersonate ChatGPT composer Stop',async({page})=>{
+    await openFixture(page,
+      '<button aria-label="Stop streaming" style="position:absolute;left:40px;top:40px">Stop</button>'+
+      composer('<button aria-label="Start voice mode">voice</button>')
+    );
+    expect(await host(page)).toMatchObject({mode:'idle',busy:false,ready:false});
+  });
+
   test('ready Send with a staged user task dispatches once and only once', async ({ page }) => {
     await openFixture(page, composer(
       '<button id="composer-submit-button" data-testid="send-button" aria-label="Send prompt" type="button">↑</button>',

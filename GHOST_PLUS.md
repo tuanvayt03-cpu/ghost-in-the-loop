@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.25`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.26`.
 
 ## Added behavior
 
@@ -520,3 +520,20 @@ This release:
 Regression fixtures include long answers with multiple Markdown blocks/table and trailing `HALT`, dynamically appearing assistant messages, roleless assistant replies, newer user turns, false-positive user quotes, and one-shot/Stop/adopt behavior.
 
 **Live boundary:** these are fresh isolated Chromium DOM simulations; the user's authenticated ChatGPT tab has not been certified until Tampermonkey is updated and the affected tab is reloaded.
+
+## v0.15.26 Web Recovery / Operator Gate state reconciliation
+
+This release fixes the scenario in which a user can see ChatGPT's genuine **Stop** control (the model is working) while Ghost remains **PAUSED · HUMAN_REQUIRED** because an earlier Web Recovery probe's Send was not confirmed by a strict increase in the number of user turns.
+
+**Positive evidence, not guesses:**
+- Recovery Send acceptance observes an increased user-turn count **or a changed latest user-turn fingerprint**. Virtualized/replaced user turns may retain the same count.
+- A send is not declared definitely failed unless an explicit SEND_TIMEOUT is also accompanied by stable user count, stable user text, stable assistant state, no generation, and an owned recovery attempt.
+- If a recovery attempt has not been confirmed but a real Stop or new assistant progress is present, Web Recovery **freezes the episode and observes**. It does not claim successful delivery, auto-resend, re-stage, or escalate to HUMAN solely because a strict user count failed to advance.
+- A transient WEB_SEND_UNCERTAIN operator gate only clears automatically on a new user/assistant turn or changed assistant content. Stop/BUSY alone cannot prove delivery and cannot remove an unrelated gate.
+- **Explicit operator Resume** for a transient WEB_SEND_UNCERTAIN gate while ChatGPT is actively working clears that gate and adopts the existing turn without preparing a new prompt. Hard AUTH and other gates do not bypass while BUSY.
+- A locked Ghost panel now distinguishes the Ghost pause from the real host activity with the text **ChatGPT đang làm việc (Ghost khóa riêng)**.
+- ChatGPT-only deployment and all no-replay/no-secret/no-unrelated-draft protections remain in force.
+
+The prior field screenshot showed Ghost v0.15.24, despite v0.15.25 already being released. The user must refresh Tampermonkey and reload the affected ChatGPT tabs before judging this release.
+
+**Evidence boundary:** These fixes are tested in isolated Chromium fixtures; the authenticated production ChatGPT page is not accessible to the test browser. The legacy extension artifact mismatch remains inherited repository debt and is outside this Tampermonkey release.

@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.27`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.28`.
 
 ## Added behavior
 
@@ -544,3 +544,7 @@ This release integrates recovery fixes with the existing v0.15.26 task-name/badg
 - Existing ChatGPT-only scope, user draft preservation and task-preserving browser title behavior are unchanged.
 
 The field screenshot was still showing v0.15.24. Update Tampermonkey and reload the ChatGPT tab before checking v0.15.27. Automated tests do not substitute for verification on the authenticated live tab.
+
+## v0.15.28 exact delivery confirmation
+
+The shared ChatGPT adapter supports data-turn-key groups and exact matching user-message receipts. Core and Web Recovery no longer accept Stop, empty composer, changed assistant, or unrelated manual input as proof their own Send succeeded. Ambiguous Send remains blocked without automatic resend. Research and fork evaluation are in docs/research/2026-10-10-chatgpt-web-reliability-alternatives.md. All 14 loader modules pin to cd335165db63eb584ed0da0b181d805a76c96b91. The old Firefox generated artifact requires a separate migration. Authenticated live-tab acceptance remains required.

@@ -81,7 +81,7 @@ assert.match(manager,/domChatGptFaultSuppressesWeakBusy/,'terminal stream faults
 assert.match(manager,/mode:'idle',busy:false/,'Resume\/delivery terminal faults without Stop must resolve fault-idle');
 assert.match(manager,/recoverable-stream-fault-idle/,'fault-idle provenance missing');
 assert.match(manager,/mode:'uncertain'/,'unresolved host controls must fail closed');
-assert.match(loader,/ghostplus\.15\.28/);
+assert.match(loader,/ghostplus\.15\.29/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);

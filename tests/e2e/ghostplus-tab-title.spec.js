@@ -11,8 +11,9 @@ window.GM_setValue=(key,value)=>{window.__store[key]=value};
 window.GM_notification=()=>{};
 `;
 async function fixture(page,{title='Research task',sidebar='Research task'}={}){
-  const html=`<!doctype html><html><head><title>${title}</title></head><body>
-    <nav><a id="current-chat" href="/c/tabtitle-case">${sidebar}</a></nav>
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head><body>
+    <a id="skip-main" href="#main" aria-label="Chuyển đến nội dung">Chuyển đến nội dung</a>
+    <nav><a id="current-chat" href="/c/tabtitle-case" title="Chuyển đến nội dung" aria-label="Chuyển đến nội dung">${sidebar}</a></nav>
     <main><form><div id="prompt-textarea" contenteditable="true"></div></form></main>
     <div id="ghostplus-watch"></div></body></html>`;
   await page.route('https://chatgpt.com/**',route=>route.fulfill({status:200,contentType:'text/html',body:html}));
@@ -24,6 +25,25 @@ async function lock(page,type='HUMAN_REQUIRED'){
   await page.evaluate(type=>window.__ghostPlusSupervisor.lock(type,{reason:'Human input required'}),type);
 }
 test.describe('Ghost+ task-preserving single tab badge',()=>{
+  test('skip-to-content link never replaces the visible conversation title',async({page})=>{
+    await fixture(page,{title:'🔴 Chuyển đến nội dung',sidebar:'Bot Limit — Copy XAU'});
+    await lock(page);
+    await expect.poll(()=>page.title()).toBe('🔴 Bot Limit — Copy XAU');
+    await page.evaluate(()=>window.__ghostPlusRuntime.destroy('test-cleanup'));
+    await expect.poll(()=>page.title()).toBe('Bot Limit — Copy XAU');
+  });
+  test('an in-chat fragment link cannot masquerade as sidebar title',async({page})=>{
+    await fixture(page,{title:'🔴 HUMAN · 🔴 HUMAN',sidebar:'Ghost — Fix sidebar'});
+    await page.evaluate(()=>{
+      const bad=document.createElement('a');
+      bad.href='/c/tabtitle-case#main';
+      bad.title='Chuyển đến nội dung';
+      bad.textContent='Chuyển đến nội dung';
+      document.body.prepend(bad);
+    });
+    await lock(page);
+    await expect.poll(()=>page.title()).toBe('🔴 Ghost — Fix sidebar');
+  });
   test('repeated legacy HUMAN prefixes collapse to one red dot and retain the task title',async({page})=>{
     await fixture(page,{title:'🔴 HUMAN · 🔴 HUMAN · Copy trade research',sidebar:'Copy trade research'});
     await lock(page);

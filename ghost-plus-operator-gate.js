@@ -59,14 +59,30 @@ function cleanTabTitle(v){
   for(let i=0;i<20&&badge.test(value);i++)value=value.replace(badge,'').trim();
   return value;
 }
+function usableTaskTitle(v){
+  const value=cleanTabTitle(v);
+  if(!value)return'';
+  const label=value.normalize('NFC').toLocaleLowerCase('vi');
+  // A11y skip links and navigation labels are never conversation titles.
+  if(/^(?:chatgpt|new chat|human|relay|context|auth|recovery|blocked|chuyển đến nội dung|đi tới nội dung(?: chính)?|bỏ qua đến nội dung|skip to (?:main )?content|skip navigation|main content)$/.test(label))return'';
+  return value.slice(0,180);
+}
 function sidebarTaskName(){
   const current=path();
+  // Explicit conversation links only. A same-page "#main" skip link shares
+  // location.pathname and was incorrectly selected as the task title.
+  if(!/^\/c\/[^/]+\/?$/.test(current))return'';
   let links=[];try{links=[...document.querySelectorAll('a[href]')]}catch(_){}
   for(const a of links){
-    let target='';try{target=new URL(a.getAttribute('href')||'',location.href).pathname}catch(_){}
-    if(target!==current)continue;
-    const candidate=cleanTabTitle(a.getAttribute('title')||a.getAttribute('aria-label')||a.textContent);
-    if(candidate&&!/^(?:ChatGPT|New chat|HUMAN|RELAY|CONTEXT|AUTH|RECOVERY|BLOCKED)$/i.test(candidate))return candidate.slice(0,180);
+    const href=String(a.getAttribute('href')||'').trim();
+    if(!/^(?:\/c\/|https?:\/\/)/i.test(href))continue;
+    let url;try{url=new URL(href,location.href)}catch(_){continue}
+    if(url.origin!==location.origin||url.pathname!==current||url.hash)continue;
+    // Visible task text wins over tooltip/aria navigation labels.
+    for(const text of [a.querySelector?.('[data-testid="history-item-title"]')?.textContent,a.textContent,a.getAttribute('title'),a.getAttribute('aria-label')]){
+      const candidate=usableTaskTitle(text);
+      if(candidate)return candidate;
+    }
   }
   return'';
 }
@@ -77,14 +93,13 @@ function resetTabTitleKey(){
 }
 function tabBaseTitle(){
   resetTabTitleKey();
-  const raw=cleanTabTitle(document.title);
+  const raw=usableTaskTitle(document.title);
   const sidebar=sidebarTaskName();
-  const usable=raw&&!/^(?:ChatGPT|New chat|HUMAN|RELAY|CONTEXT|AUTH|RECOVERY|BLOCKED)$/i.test(raw);
-  if(usable)S.titleBase=raw;
-  // The sidebar holds the actual task name if title was reduced to repeated
-  // old Ghost badges; it also reflects a user-driven rename while gated.
+  if(raw)S.titleBase=raw;
+  // A visible sidebar conversation name overrides a stale/poisoned tab title
+  // and reflects a genuine rename while the operator gate remains active.
   if(sidebar)S.titleBase=sidebar;
-  return S.titleBase||raw||'ChatGPT';
+  return usableTaskTitle(S.titleBase)||'ChatGPT';
 }
 function setGateTabTitle(type){
   const title=meta(type).icon+' '+tabBaseTitle();
@@ -92,7 +107,7 @@ function setGateTabTitle(type){
   S.titleLastRendered=title;
 }
 function restoreTabTitle(){
-  const title=cleanTabTitle(document.title)||S.titleBase||sidebarTaskName()||'ChatGPT';
+  const title=sidebarTaskName()||usableTaskTitle(document.title)||usableTaskTitle(S.titleBase)||'ChatGPT';
   if(document.title!==title)document.title=title;
   S.titleLastRendered='';
 }

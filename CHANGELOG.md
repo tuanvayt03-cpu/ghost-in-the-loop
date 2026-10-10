@@ -1,5 +1,13 @@
 # Changelog
 
+## [Ghost+ 0.15.29] — keep the real ChatGPT conversation name
+
+- Ignore same-page accessibility links (including `#main` / “Chuyển đến nội dung”) when finding the current sidebar conversation.
+- Trust the visible conversation label before `title` and `aria-label`; reject generic navigation labels and repair stale Ghost-prefixed titles.
+- Preserve exactly one red dot for a blocked HUMAN gate, and restore the actual task name when the gate clears, the tab changes, or React renames the conversation.
+- Add Chromium regression fixtures for real Vietnamese skip links and poisoned tooltip/aria labels; retain the no-duplicate-Send controls from 0.15.28.
+- Automated fixture evidence is not authenticated live UI acceptance. Firefox `check:committed` mismatch remains separately tracked.
+
 ## [8.8.5] — production dispatch router and Firefox/Android round-2 repair
 
 ### P0 Perplexity / fallback controls follow-up

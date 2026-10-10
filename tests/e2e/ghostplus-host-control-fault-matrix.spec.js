@@ -67,6 +67,26 @@ async function host(page) {
 }
 
 test.describe('Ghost+ authoritative ChatGPT host-control fault matrix', () => {
+  test('modern agent-turn-start completed output exits WAITING without sending another user turn',async({page})=>{
+    await openFixture(page,
+      '<div data-turn-key="modern-c">'+
+      '<div data-user-message-bubble>Continue existing job</div>'+
+      '<section data-chatgpt-agent-turn-start>'+
+      '<div class="markdown">Report finalized.</div>'+
+      '<div class="markdown">[[GITL::HALT]]</div>'+
+      '</section></div>'+
+      composer('<button aria-label="Start voice mode">voice</button>'),
+      {core:true}
+    );
+    await page.evaluate(()=>{
+      window.__voiceClicks=0;
+      document.querySelector('form button').addEventListener('click',()=>window.__voiceClicks++);
+    });
+    await page.locator('#gitl9 [data-a="play"]').click();
+    await expect(page.locator('#gitl9 .status')).toContainText('COMPLETE',{timeout:5500});
+    expect(await page.evaluate(()=>window.__voiceClicks)).toBe(0);
+  });
+
   test('Stop plus cleared composer cannot falsely confirm a Ghost Send without matching user receipt',async({page})=>{
     await openFixture(page,composer(
       '<button id="composer-submit-button" type="button" data-testid="send-button" aria-label="Send prompt">↑</button>',

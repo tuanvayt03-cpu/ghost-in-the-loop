@@ -81,7 +81,7 @@ assert.match(manager,/domChatGptFaultSuppressesWeakBusy/,'terminal stream faults
 assert.match(manager,/mode:'idle',busy:false/,'Resume\/delivery terminal faults without Stop must resolve fault-idle');
 assert.match(manager,/recoverable-stream-fault-idle/,'fault-idle provenance missing');
 assert.match(manager,/mode:'uncertain'/,'unresolved host controls must fail closed');
-assert.match(loader,/ghostplus\.15\.29/);
+assert.match(loader,/ghostplus\.15\.30/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);
@@ -178,6 +178,7 @@ assert.match(core,/chatgptHostControlState/,'core Play must consume shared Stop\
 assert.match(manager,/domChatGptGroupedTurns/,'modern turn-key user/assistant groups need a shared extractor');
 assert.match(manager,/data-user-message-bubble/,'modern user message selector missing');
 assert.match(manager,/data-conversation-role="assistant"/,'modern assistant role selector missing');
+assert.match(manager,/data-chatgpt-agent-turn-start/,'modern agent-turn-start response fallback missing');
 assert.match(manager,/domChatGptSubmissionObserved/,'exact receipt observation contract missing');
 assert.match(core,/chatgptUserSnapshot/,'Core must snapshot user messages before Send');
 assert.match(core,/chatgptSubmissionObserved/,'Core must require exact user-message receipt');

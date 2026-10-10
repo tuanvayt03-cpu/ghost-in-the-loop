@@ -803,3 +803,30 @@ test('missing pre-submit snapshot cannot acknowledge an already visible matching
   expect(rt.dom.chatgptSubmissionObserved(null,'continue safely')).toBe(false);
   expect(rt.dom.chatgptSubmissionObserved({count:1,latestText:'continue safely'},'continue safely')).toBe(false);
 });
+
+test('modern agent-turn-start assistant wrapper is read only when response content is present',()=>{
+  document.body.innerHTML=`
+    <main>
+      <div data-turn-key="modern-A">
+        <div data-user-message-bubble>continue safely</div>
+        <div data-chatgpt-agent-turn-start>
+          <div class="markdown">Completed work after UI change.</div>
+          <div class="markdown">[[GITL::HALT]]</div>
+        </div>
+      </div>
+    </main>`;
+  const rt=boot();
+  expect(rt.dom.chatgptTurns().map(x=>x.role)).toEqual(['user','assistant']);
+  expect(rt.dom.latestChatgptAssistantText()).toBe('Completed work after UI change.\n[[GITL::HALT]]');
+});
+
+test('empty agent-turn-start marker cannot impersonate an assistant answer',()=>{
+  document.body.innerHTML=`
+    <main><div data-turn-key="modern-B">
+      <div data-user-message-bubble>User request remains pending</div>
+      <div data-chatgpt-agent-turn-start></div>
+    </div></main>`;
+  const rt=boot();
+  expect(rt.dom.chatgptTurns().map(x=>x.role)).toEqual(['user']);
+  expect(rt.dom.latestChatgptAssistantText()).toBe('');
+});

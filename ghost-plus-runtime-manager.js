@@ -2,7 +2,7 @@
 'use strict';
 
 const ROOT='__ghostPlusRuntime';
-const VERSION='0.15.29';
+const VERSION='0.15.30';
 const previous=window[ROOT];
 try { if(previous?.active && typeof previous.destroy==='function') previous.destroy('reinject'); } catch (_) {}
 // Fail closed even if an older Tampermonkey installation still injects this loader
@@ -421,8 +421,12 @@ function domChatGptGroupedTurns(root){
     try{
       users=[...group.querySelectorAll('[data-user-message-bubble]')]
         .filter(el=>!el.parentElement?.closest?.('[data-user-message-bubble]'));
-      assistants=[...group.querySelectorAll('[data-conversation-role="assistant"]')]
-        .filter(el=>!el.parentElement?.closest?.('[data-conversation-role="assistant"]'));
+      // Newer ChatGPT renderers expose an agent-turn-start response wrapper
+      // instead of an explicit assistant role. Only wrappers containing
+      // readable response content are returned; empty markers never qualify.
+      assistants=[...group.querySelectorAll('[data-conversation-role="assistant"],[data-chatgpt-agent-turn-start]')]
+        .filter(el=>!el.parentElement?.closest?.('[data-conversation-role="assistant"],[data-chatgpt-agent-turn-start]')
+          &&!el.closest?.('[data-user-message-bubble]'));
     }catch(_){}
     for(const el of users){
       const text=domChatGptTurnText(el);

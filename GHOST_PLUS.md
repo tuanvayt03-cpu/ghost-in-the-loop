@@ -6,7 +6,7 @@ Personal fork overlay for ChatGPT Web.
 
 Install `ghost-plus.user.js` and disable/delete the separately-installed upstream `Ghost in the Loop` userscript. The loader pulls the canonical Ghost runtime from this fork and then applies the Ghost+ modules in the same Tampermonkey execution unit.
 
-Current loader version: `9.0.0-alpha.2+ghostplus.15.28`.
+Current loader version: `9.0.0-alpha.2+ghostplus.15.30`.
 
 ## Added behavior
 
@@ -548,3 +548,11 @@ The field screenshot was still showing v0.15.24. Update Tampermonkey and reload 
 ## v0.15.28 exact delivery confirmation
 
 The shared ChatGPT adapter supports data-turn-key groups and exact matching user-message receipts. Core and Web Recovery no longer accept Stop, empty composer, changed assistant, or unrelated manual input as proof their own Send succeeded. Ambiguous Send remains blocked without automatic resend. Research and fork evaluation are in docs/research/2026-10-10-chatgpt-web-reliability-alternatives.md. All 14 loader modules pin to cd335165db63eb584ed0da0b181d805a76c96b91. The old Firefox generated artifact requires a separate migration. Authenticated live-tab acceptance remains required.
+
+## v0.15.30 — Modern ChatGPT agent-turn renderer
+
+- Reader handles `[data-turn-key]` grouped turns with `[data-chatgpt-agent-turn-start]` response containers. A marker without content remains invisible to terminal handling.
+- Confirmed Send still requires a fresh, exact matching user-turn receipt. No Stop/empty-composer guessing or blind retry.
+- Added regression fixtures for agent-turn marker HALT and empty marker; no browser message is sent by those tests.
+- Research decision and migration roadmap: `docs/GHOST_AUTOMATION_RESEARCH_2026-10-10.md`.
+- The Firefox legacy extension mismatch and full legacy Jest suite remain separate unresolved debt. Ghost+ Tampermonkey release is not live-certified on an authenticated ChatGPT browser until a real-session acceptance pass.

@@ -398,25 +398,36 @@ async function waitForSendButton(el, expectedText='') {
   }
   return {ok:false,why:'send-control-missing'};
 }
-async function confirmSend(beforeUsers, beforeComposer, beforeAssistantHash) {
+async function confirmSend(beforeUsers, beforeComposer, beforeAssistantHash, expectedText='', beforeSnapshot=null) {
   const started = now();
   const confirmMs=HOST.id==='chatgpt'?CHATGPT_SEND_CONFIRM_MS:SEND_CONFIRM_MS;
   while (now() - started < confirmMs) {
-    if (generating()) return { ok: true, why: 'generation-started' };
-    if (userCount() > beforeUsers) return { ok: true, why: 'new-user-turn' };
-    const el = composer();
-    if (el && beforeComposer && semanticText(nodeText(el)) === '') return { ok: true, why: 'composer-cleared' };
-    const currentAssistant = assistantText();
-    if (beforeAssistantHash && currentAssistant && hash(currentAssistant) !== beforeAssistantHash) return { ok: true, why: 'assistant-changed' };
+    if(HOST.id==='chatgpt'){
+      const receipt=window.__ghostPlusRuntime?.dom?.chatgptSubmissionObserved;
+      // Stop/BUSY, a cleared composer, or another assistant turn are not
+      // receipts for this exact prompt. An unrelated/manual turn must never
+      // advance the queue. Unknown outcome remains at-most-once.
+      if(receipt?.(beforeSnapshot,expectedText))return{ok:true,why:'matching-user-turn'};
+    }else{
+      if (generating()) return {ok:true,why:'generation-started'};
+      if (userCount() > beforeUsers) return {ok:true,why:'new-user-turn'};
+      const el = composer();
+      if (el && beforeComposer && semanticText(nodeText(el)) === '') return {ok:true,why:'composer-cleared'};
+      const currentAssistant = assistantText();
+      if (beforeAssistantHash && currentAssistant && hash(currentAssistant) !== beforeAssistantHash)
+        return {ok:true,why:'assistant-changed'};
+    }
     await sleep(250); if(!RT.alive()) return {ok:false,why:'runtime-destroyed'};
   }
-  return { ok: false, why: 'unconfirmed' };
+  return {ok:false,why:'matching-user-turn-not-observed'};
 }
 
 async function sendOnce(text, reason) {
   if (!RT.alive() || S.mode !== 'RUNNING' || S.sending || S.uncertain) return false;
   S.sending = true; S.detail = `Staging ${reason}...`; render();
   const beforeUsers = userCount();
+  const beforeUserSnapshot=HOST.id==='chatgpt'
+    ?window.__ghostPlusRuntime?.dom?.chatgptUserSnapshot?.():null;
   const beforeAssistantHash = hash(assistantText());
   const staged = await setComposerText(text);
   if(!RT.alive())return false;
@@ -470,7 +481,7 @@ async function sendOnce(text, reason) {
       fail('PLAY-SEND-THREW', 'Send threw after actuation. Ghost stopped to prevent a duplicate.', { message: String(error?.message || error) }); return false;
     }
   }
-  const confirmed = await confirmSend(beforeUsers, beforeComposer, beforeAssistantHash);
+  const confirmed = await confirmSend(beforeUsers, beforeComposer, beforeAssistantHash,text,beforeUserSnapshot);
   if(!RT.alive())return false;
   S.sending = false;
   if (!confirmed.ok) {

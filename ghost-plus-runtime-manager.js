@@ -2,7 +2,7 @@
 'use strict';
 
 const ROOT='__ghostPlusRuntime';
-const VERSION='0.15.27';
+const VERSION='0.15.28';
 const previous=window[ROOT];
 try { if(previous?.active && typeof previous.destroy==='function') previous.destroy('reinject'); } catch (_) {}
 // Fail closed even if an older Tampermonkey installation still injects this loader
@@ -408,6 +408,45 @@ function domChatGptResponseFallbacks(root){
   }catch(_){}
   return candidates;
 }
+function domChatGptGroupedTurns(root){
+  // Modern ChatGPT renders a user bubble and its assistant response within
+  // the same durable [data-turn-key] container. The role belongs to each
+  // inner message, never to the shared group.
+  const rows=[];
+  let groups=[];try{groups=[...root.querySelectorAll('[data-turn-key]')]}catch(_){}
+  for(const group of groups){
+    if(group.parentElement?.closest?.('[data-turn-key]'))continue;
+    if(group.closest?.('#gitl9,[id^="ghostplus-"]'))continue;
+    let users=[],assistants=[];
+    try{
+      users=[...group.querySelectorAll('[data-user-message-bubble]')]
+        .filter(el=>!el.parentElement?.closest?.('[data-user-message-bubble]'));
+      assistants=[...group.querySelectorAll('[data-conversation-role="assistant"]')]
+        .filter(el=>!el.parentElement?.closest?.('[data-conversation-role="assistant"]'));
+    }catch(_){}
+    for(const el of users){
+      const text=domChatGptTurnText(el);
+      if(text)rows.push(Object.freeze({role:'user',text,el}));
+    }
+    for(const el of assistants){
+      const text=domChatGptTurnText(el);
+      if(text)rows.push(Object.freeze({role:'assistant',text,el}));
+    }
+  }
+  return rows;
+}
+function domChatGptUserSnapshot(){
+  const users=domChatGptTurns().filter(row=>row.role==='user');
+  return{count:users.length,latestText:users.length?domNorm(users[users.length-1].text):''};
+}
+function domChatGptSubmissionObserved(previous,expectedText){
+  // Never turn an existing matching message into a receipt when the
+  // pre-submit snapshot was not captured.
+  if(!previous||!Number.isFinite(previous.count)||typeof previous.latestText!=='string')return false;
+  const target=domNorm(expectedText||''),current=domChatGptUserSnapshot();
+  if(!target||current.latestText!==target)return false;
+  return current.count>previous.count||current.latestText!==domNorm(previous.latestText);
+}
 function domChatGptTurns(){
   if(!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname))return[];
   // The outer <article> and the role-bearing author element are not always
@@ -419,15 +458,19 @@ function domChatGptTurns(){
     nodes=[...root.querySelectorAll(
       CHATGPT_TURN_SELECTOR+',[data-message-author-role],[data-author],[data-turn="user"],[data-turn="assistant"],article[aria-label^="ChatGPT said"],article[aria-label^="You said"]'
     )].filter(x=>x.isConnected&&!x.closest?.('#gitl9,[id^="ghostplus-"]'));
+    const grouped=domChatGptGroupedTurns(root);
     const inferred=domChatGptResponseFallbacks(root);
     const known=new Set(nodes);
     for(const el of inferred)if(!known.has(el)){nodes.push(el);known.add(el)}
+    // Role-specific messages inside [data-turn-key] supersede any outer
+    // article/Copy-toolbar fallback. A modern group can contain both roles.
+    nodes=nodes.filter(el=>!el.closest?.('[data-turn-key]')&&!el.querySelector?.('[data-turn-key]'));
     nodes.sort((a,b)=>{
       const position=a.compareDocumentPosition?.(b)||0;
       return position&4?-1:position&2?1:0;
     });
     const inferredSet=new Set(inferred);
-    const rows=[];
+    const rows=[...grouped];
     for(const el of nodes){
       if(nodes.some(parent=>parent!==el&&parent.contains?.(el)))continue;
       const role=domChatGptRole(el)||(inferredSet.has(el)?'assistant':'');
@@ -435,6 +478,10 @@ function domChatGptTurns(){
       const text=domChatGptTurnText(el);if(!text)continue;
       rows.push(Object.freeze({role,text,el}));
     }
+    rows.sort((a,b)=>{
+      const position=a.el.compareDocumentPosition?.(b.el)||0;
+      return position&4?-1:position&2?1:0;
+    });
     return rows;
   }catch(_){}
   return[];
@@ -944,6 +991,8 @@ const dom=Object.freeze({
   chatgptTurns:domChatGptTurns,
   latestChatgptAssistantText:domLatestChatGptAssistantText,
   chatgptUserCount:domChatGptUserCount,
+  chatgptUserSnapshot:domChatGptUserSnapshot,
+  chatgptSubmissionObserved:domChatGptSubmissionObserved,
   chatgptActivityState:domChatGptActivityState,
   isChatgptGenerating:domIsChatGptGenerating,
   classifyChatgptFaultText:domClassifyChatGptFaultText,

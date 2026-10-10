@@ -90,16 +90,19 @@ test('hard AUTH gate does not unlock or stage a prompt while ChatGPT is busy',as
   expect(await page.evaluate(()=>window.__ghostPlusSupervisor.isLocked())).toBe(true);
   expect(await page.locator('#prompt-textarea').textContent()).toBe('');
 });
-test('recovery uses user text fingerprints when virtualized user count stays constant',async({page})=>{
+test('recovery rejects unrelated user progress; only exact probe receipt confirms submission',async({page})=>{
   await boot(page,{withWeb:true,user:'Old request'});
   const result=await page.evaluate(()=>{
     const snap={key:'fault-test',error:{type:'PLAY_SEND_UNCERTAIN'},active:true};
-    const attempt=window.__webTest.beginRecoveryAttempt('[WEB RECOVERY STATUS PROBE]',snap,1,0);
+    const prompt='[WEB RECOVERY STATUS PROBE]';
+    const attempt=window.__webTest.beginRecoveryAttempt(prompt,snap,1,0);
     const before=window.__webTest.recoveryAcceptanceObserved(attempt);
-    document.querySelector('article').textContent='New request (same number of turns)';
-    return {before,after:window.__webTest.recoveryAcceptanceObserved(attempt)};
+    document.querySelector('article').textContent='New manual request (same number of turns)';
+    const unrelated=window.__webTest.recoveryAcceptanceObserved(attempt);
+    document.querySelector('article').textContent=prompt;
+    return {before,unrelated,matching:window.__webTest.recoveryAcceptanceObserved(attempt)};
   });
-  expect(result).toEqual({before:'',after:'changed-user-turn'});
+  expect(result).toEqual({before:'',unrelated:'',matching:'matching-user-turn'});
 });
 test('recovery in active Stop state remains observation-only, never HUMAN escalation',async({page})=>{
   await boot(page,{withWeb:true,user:'Old request'});

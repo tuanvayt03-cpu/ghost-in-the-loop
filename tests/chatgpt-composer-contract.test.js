@@ -752,3 +752,54 @@ test('Ghost title cleaner removes legacy badge stacks but keeps the task name',(
   expect(clean('HUMAN research project')).toBe('HUMAN research project');
   expect(clean('🔴 HUMAN · 🔴 HUMAN')).toBe('');
 });
+
+test('modern data-turn-key ChatGPT group exposes user and assistant as separate ordered messages',()=>{
+  document.body.innerHTML=`
+    <main>
+      <div data-turn-key="conv-turn-1">
+        <div data-user-message-bubble>continue the project</div>
+        <section data-conversation-role="assistant">
+          <div class="markdown">Final checklist</div>
+          <div class="markdown">[[GITL::HALT]]</div>
+        </section>
+      </div>
+    </main>`;
+  const rt=boot();
+  expect(rt.dom.chatgptTurns().map(x=>x.role)).toEqual(['user','assistant']);
+  expect(rt.dom.chatgptUserCount()).toBe(1);
+  expect(rt.dom.latestChatgptAssistantText()).toContain('Final checklist');
+  expect(rt.dom.latestChatgptAssistantText()).toContain('[[GITL::HALT]]');
+});
+
+test('modern data-turn-key group with only new user message does not reuse an old assistant answer',()=>{
+  document.body.innerHTML=`
+    <main>
+      <div data-turn-key="conv-turn-1">
+        <div data-user-message-bubble>previous request</div>
+        <div data-conversation-role="assistant"><div class="markdown">Previous answer</div></div>
+      </div>
+      <div data-turn-key="conv-turn-2"><div data-user-message-bubble>new user request</div></div>
+    </main>`;
+  const rt=boot();
+  expect(rt.dom.chatgptTurns().map(x=>x.role)).toEqual(['user','assistant','user']);
+  expect(rt.dom.latestChatgptAssistantText()).toBe('');
+});
+
+test('ChatGPT message receipt requires new matching user text rather than Stop, cleared composer or unrelated reply',()=>{
+  document.body.innerHTML=`
+    <main><div data-turn-key="conv-turn-1"><div data-user-message-bubble>previous request</div></div></main>`;
+  const rt=boot();
+  const before=rt.dom.chatgptUserSnapshot();
+  expect(rt.dom.chatgptSubmissionObserved(before,'run exact checklist')).toBe(false);
+  document.querySelector('[data-user-message-bubble]').textContent='unrelated manual message';
+  expect(rt.dom.chatgptSubmissionObserved(before,'run exact checklist')).toBe(false);
+  document.querySelector('[data-user-message-bubble]').textContent='run exact checklist';
+  expect(rt.dom.chatgptSubmissionObserved(before,'run exact checklist')).toBe(true);
+});
+
+test('missing pre-submit snapshot cannot acknowledge an already visible matching user message',()=>{
+  document.body.innerHTML=`<main><div data-turn-key="a"><div data-user-message-bubble>continue safely</div></div></main>`;
+  const rt=boot();
+  expect(rt.dom.chatgptSubmissionObserved(null,'continue safely')).toBe(false);
+  expect(rt.dom.chatgptSubmissionObserved({count:1,latestText:'continue safely'},'continue safely')).toBe(false);
+});

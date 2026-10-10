@@ -268,6 +268,7 @@ function beginRecoveryAttempt(prompt,snap,beforeUsers,beforeAssistants){
     stagedAt:now(),
     beforeUsers,
     beforeAssistants,
+    beforeUserSnapshot:window.__ghostPlusRuntime?.dom?.chatgptUserSnapshot?.()||null,
     beforeUserHash:hash(latestText(users())),
     beforeAssistantHash:hash(latestText(assistants()))
   };
@@ -276,12 +277,11 @@ function beginRecoveryAttempt(prompt,snap,beforeUsers,beforeAssistants){
 }
 function recoveryAcceptanceObserved(attempt=S.recoveryAttempt){
   if(!attempt)return'';
-  if(users().length>attempt.beforeUsers)return'new-user-turn';
-  // Virtualized/replaced turns can preserve the same count even when a
-  // submitted user message is new. A new user-text fingerprint is positive
-  // chat progression; it is NOT proof that Ghost's exact probe was sent.
-  const current=hash(latestText(users()));
-  return current!==attempt.beforeUserHash?'changed-user-turn':'';
+  const receipt=window.__ghostPlusRuntime?.dom?.chatgptSubmissionObserved;
+  // Only an exact matching user message can acknowledge this recovery
+  // probe. An unrelated/manual user message is progress, not our receipt.
+  if(receipt?.(attempt.beforeUserSnapshot,attempt.prompt))return'matching-user-turn';
+  return'';
 }
 function observeActiveRecovery(snap,attempt=S.recoveryAttempt){
   if(!attempt)return false;

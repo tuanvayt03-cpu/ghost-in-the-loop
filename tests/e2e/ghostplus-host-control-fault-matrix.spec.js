@@ -6,7 +6,8 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '../..');
 const RUNTIME = fs.readFileSync(path.join(ROOT, 'ghost-plus-runtime-manager.js'), 'utf8');
 const CORE = fs.readFileSync(path.join(ROOT, 'ghost-in-the-loop.user.js'), 'utf8')
-  .replace(/\/\/ ==UserScript==[\s\S]*?\/\/ ==\/UserScript==/m, '');
+  .replace(/\/\/ ==UserScript==[\s\S]*?\/\/ ==\/UserScript==/m, '')
+  .replace('const CHATGPT_SEND_CONFIRM_MS = 45000;', 'const CHATGPT_SEND_CONFIRM_MS = 2500;');
 
 const GM = `
 window.__gmStore = {};
@@ -66,6 +67,29 @@ async function host(page) {
 }
 
 test.describe('Ghost+ authoritative ChatGPT host-control fault matrix', () => {
+  test('Stop plus cleared composer cannot falsely confirm a Ghost Send without matching user receipt',async({page})=>{
+    await openFixture(page,composer(
+      '<button id="composer-submit-button" type="button" data-testid="send-button" aria-label="Send prompt">↑</button>',
+      'Continue the verified job'
+    ),{core:true});
+    await page.evaluate(()=>{
+      window.__attemptClicks=0;
+      const button=document.getElementById('composer-submit-button');
+      button.addEventListener('click',()=>{
+        window.__attemptClicks++;
+        document.getElementById('prompt-textarea').textContent='';
+        button.setAttribute('data-testid','stop-button');
+        button.setAttribute('aria-label','Stop streaming');
+        button.textContent='■';
+      });
+    });
+    await page.locator('#gitl9 [data-a="play"]').click();
+    await expect.poll(()=>page.evaluate(()=>window.__attemptClicks)).toBe(1);
+    await expect(page.locator('#gitl9 .status')).toContainText('PLAY-SEND-UNCERTAIN',{timeout:7000});
+    expect(await page.evaluate(()=>window.__attemptClicks)).toBe(1);
+    expect(await page.locator('article[aria-label^="You said"]').count()).toBe(0);
+  });
+
   test('explicit Stop is authoritative and Play adopts without a host Send', async ({ page }) => {
     await openFixture(page, composer(
       '<button id="composer-submit-button" data-testid="stop-button" aria-label="Stop streaming" type="button">■</button>'

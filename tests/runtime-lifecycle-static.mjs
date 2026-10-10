@@ -81,7 +81,7 @@ assert.match(manager,/domChatGptFaultSuppressesWeakBusy/,'terminal stream faults
 assert.match(manager,/mode:'idle',busy:false/,'Resume\/delivery terminal faults without Stop must resolve fault-idle');
 assert.match(manager,/recoverable-stream-fault-idle/,'fault-idle provenance missing');
 assert.match(manager,/mode:'uncertain'/,'unresolved host controls must fail closed');
-assert.match(loader,/ghostplus\.15\.27/);
+assert.match(loader,/ghostplus\.15\.28/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);
@@ -175,6 +175,14 @@ assert.match(core,/hostControl,/,'diagnostic export must report sanitized host-c
 assert.match(core,/latestChatgptAssistantText/,'core must read current ChatGPT turn contract');
 assert.match(core,/chatgptUserCount/,'core must use shared ChatGPT user count');
 assert.match(core,/chatgptHostControlState/,'core Play must consume shared Stop\/Send host state');
+assert.match(manager,/domChatGptGroupedTurns/,'modern turn-key user/assistant groups need a shared extractor');
+assert.match(manager,/data-user-message-bubble/,'modern user message selector missing');
+assert.match(manager,/data-conversation-role="assistant"/,'modern assistant role selector missing');
+assert.match(manager,/domChatGptSubmissionObserved/,'exact receipt observation contract missing');
+assert.match(core,/chatgptUserSnapshot/,'Core must snapshot user messages before Send');
+assert.match(core,/chatgptSubmissionObserved/,'Core must require exact user-message receipt');
+assert.match(core,/matching-user-turn-not-observed/,'ambiguous Send must not be converted into success on Stop or composer clear');
+
 assert.match(core,/waitChatgptHostControl/,'core must reconcile transient missing controls before blocking');
 assert.match(core,/CHATGPT_HOST_CONTROL_WAIT_MS = 8000/,'core host-control reconciliation window regressed');
 assert.match(core,/clearComposerIfExact/,'core must clear only its exact staged draft when BUSY wins the race');
@@ -199,6 +207,7 @@ assert.match(core,/streamFaultBlocksNewSend/,'core must quarantine known stream-
 assert.match(core,/chatgptFaultState/,'core must use shared stream fault state');
 
 const webRecovery=read('ghost-plus-web-recovery.js');
+assert.match(webRecovery,/chatgptSubmissionObserved/,'Web Recovery must require exact probe receipt');
 assert.match(webRecovery,/verifiedFailureRetryMax:\s*1/,'verified SEND_TIMEOUT retry budget regressed');
 assert.match(webRecovery,/const explicitFailureType=error\.type==='SEND_TIMEOUT'/,'only an explicit SEND_TIMEOUT may prove a recovery send failed');
 assert.match(webRecovery,/retryVisible:error\.retryVisible===true/,'Retry button must remain corroborating evidence');

@@ -36,6 +36,10 @@ Date: 2026-10-12
 - Avoid attaching to unrelated active user tabs or overwriting a draft.
 
 ## Fresh release state
-- Final commit SHA, tests and origin/main should be appended to the handoff only after running QA on the last commit.
-- Runtime remains 0.15.30 pending an actual Ghost runtime change.
+- Source commit: 1beff99ebb1e2a654da4cb1c742db80f38a4ecdf. Non-force fast-forward to GitHub `main` confirmed using direct branch fetch and exact commit comparison.
+- Fresh verification on that commit: 50/50 focused Jest PASS (47 ChatGPT DOM + 3 Firefox protection); 42/42 Chromium E2E PASS; runtime VM/static/scroll PASS; syntax/lint and diff-check PASS. Tracked worktree clean.
+- Current runtime remains Ghost+ 0.15.30; loader and 14 immutable module pins were not changed. This release addresses build safety, not host-state behavior.
+- Full historical Jest 49/52 suites failed and Firefox source-parity checks remained failing; neither was suppressed.
+- Remaining hard acceptance dependency: access to a logged-in Chrome ChatGPT tab for safe read-only live UI inspection followed by explicit, bounded disposable-chat E2E. CodeLocal desktop focus returned approval_required, so no live action was taken.
 - Known open debt: Firefox functional migration and legacy Jest architecture; no workaround to force PASS.
+- Next step: obtain live UI access, observe Ghost version and host-control evidence, verify a single controlled Play/BUSY/IDLE/terminal progression without duplicate sends. Only then issue production-certified verdict.

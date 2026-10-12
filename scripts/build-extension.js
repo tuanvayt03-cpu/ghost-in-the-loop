@@ -87,6 +87,25 @@ if (checkCommitted) {
   }
   console.log('Generated extension artifact is current.');
 } else {
-  fs.writeFileSync(extensionPath, build(fs.readFileSync(userscriptPath, 'utf8')));
-  console.log('Generated extension/content.js from ghost-in-the-loop.user.js.');
+  const source = fs.readFileSync(userscriptPath, 'utf8');
+  const expected = build(source);
+  const current = fs.existsSync(extensionPath) ? fs.readFileSync(extensionPath, 'utf8') : '';
+  // Legacy Firefox still embeds the original v8 engine. Regenerating from
+  // the Ghost+ Tampermonkey userscript would silently replace that engine,
+  // rather than produce a verified, feature-equivalent Firefox migration.
+  // Never destroy this legacy artifact during a routine build.
+  const legacyMismatch = current !== expected &&
+    current.includes('__GITL_V8__') &&
+    !source.includes('__GITL_V8__');
+  if (legacyMismatch && !process.argv.includes('--migrate-legacy')) {
+    console.error('REFUSED: extension/content.js contains the legacy v8 engine. A routine build would replace it with the Ghost+ userscript runtime.');
+    console.error('Preserve the legacy artifact and validate Firefox feature parity first. Only an explicitly reviewed migration may pass --migrate-legacy.');
+    process.exit(2);
+  }
+  if (process.argv.includes('--check-overwrite')) {
+    console.log('Extension overwrite preflight: safe (no files written).');
+  } else {
+    fs.writeFileSync(extensionPath, expected);
+    console.log('Generated extension/content.js from ghost-in-the-loop.user.js.');
+  }
 }

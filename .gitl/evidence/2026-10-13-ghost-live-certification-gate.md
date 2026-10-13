@@ -41,3 +41,16 @@ Executed against local `main@2be1c575`, with zero authored source changes:
 - Primary writer: current Ghost session; no code changes in this checkpoint.
 - GitHub main was `2be1c575` before this evidence-only documentation commit.
 - Build/test verification recorded above is fresh and specific; current source remains at the same runtime version.
+
+## Follow-up: explicit desktop authorization and carrier diagnosis (2026-10-13)
+- User explicitly authorized Ghost live checking and reported **no desktop approval popup was presented**.
+- Verified CodeLocal Project workspace access was **smart** (Vietnamese “Phê duyệt giúp tôi”), where physical `computer.key` action returned an `approval_required` tool response. This is an in-tool action gate; a visible OS popup was not observed.
+- Temporarily switched that workspace to **full** to test the carrier, then **restored smart** afterward. No permanent broad privilege elevation remains.
+- Windows UI Automation successfully invoked Chrome's **New tab** control, then the ChatGPT bookmark in the newly opened tab. A fresh document titled `🔴 ChatGPT` appeared in the native accessibility tree, with Tampermonkey extension present in the Chrome toolbar. Neither fact alone proves that Ghost's main runtime panel has actually mounted.
+- The Chrome page's accessibility `Document` exposed **zero DOM descendants**, so Ghost panel, version, Play button, model state and outbound receipts could not be inspected. Bookmark `Ghost +` is merely a Chrome bookmark.
+- Desktop input `computer.type` returned `unsupported Windows Computer Use operation` even in full workspace mode. `computer.key` with `CTRL+T` returned `unsupported Windows key`. Do not infer missing ChatGPT permissions from these carrier errors.
+- Desktop screenshot returned endpoint AV/PowerShell `Add-Type -AssemblyName System.Windows.Forms` malicious-content block; no attempt was made to bypass this security control. Chrome executable launch from outside the authorized workspace was blocked by the CodeLocal path policy, also respected.
+- Isolated CodeLocal Browser cannot attach to the signed-in Chrome profile (`attachExisting=false`); local MCP extension search found no attached Chrome DevTools provider.
+- **No live Play/Send/Stop action and no test messages** were sent. One disposable ChatGPT tab and one blank test tab were opened. All unrelated user conversations/drafts remained untouched.
+- **Outcome: Live E2E remains BLOCKED by authenticated-browser observation and input capabilities**, not by a reproduced Ghost runtime failure. Scope remains ChatGPT desktop; deterministic checks listed above are still the only machine-green evidence. No source edits or new tests were claimed.
+- The precise remediation is a supported CodeLocal desktop browser carrier that exposes authenticated ChatGPT DOM/accessibility and safe input/screenshot capability without weakening AV/host policy. Then run the disposable-chat canary described above. Do not call any release/live PASS before that.

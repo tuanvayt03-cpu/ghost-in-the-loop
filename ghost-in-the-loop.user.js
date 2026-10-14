@@ -535,6 +535,15 @@ async function handleTerminal(text, parsed) {
   }
 }
 async function handleDrift(tail) {
+  // A manually submitted/already completed ChatGPT turn never received
+  // Ghost's control contract. Its missing marker cannot authorize a new
+  // message: regrounding it would silently start a new Send transaction.
+  // Keep at-most-once behavior across reloads (round counter resets).
+  if (HOST.id === 'chatgpt' && S.round === 0) {
+    log('protocol-unprimed', { tail: String(tail || '').slice(0, 80) });
+    pause('Existing ChatGPT answer has no Ghost terminal marker. Monitoring paused without sending a protocol recovery. Start a new draft with Play to enable automatic continuation.');
+    return;
+  }
   S.drift += 1; log('protocol-drift', { count: S.drift, tail: String(tail || '').slice(0, 80) });
   if (S.drift === 1) { await sendOnce(regroundPrompt(), 'protocol reground'); return; }
   if (S.drift === 2 && ON.cleanerz) { await sendOnce(cleanerzPrompt(), 'Cleanerz recovery'); return; }

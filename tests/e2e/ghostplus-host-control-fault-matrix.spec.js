@@ -9,6 +9,8 @@ const CORE = fs.readFileSync(path.join(ROOT, 'ghost-in-the-loop.user.js'), 'utf8
   .replace(/\/\/ ==UserScript==[\s\S]*?\/\/ ==\/UserScript==/m, '')
   .replace('const CHATGPT_SEND_CONFIRM_MS = 45000;', 'const CHATGPT_SEND_CONFIRM_MS = 2500;');
 
+const CORE_FAST_DRIFT = CORE.replace('const DRIFT_QUIET_MS = 9000;', 'const DRIFT_QUIET_MS = 650;');
+
 const GM = `
 window.__gmStore = {};
 window.GM_getValue = (k, d) => Object.prototype.hasOwnProperty.call(window.__gmStore, k) ? window.__gmStore[k] : d;
@@ -34,14 +36,14 @@ const composer = (action, draft='') => `
   ${action}
 </form>`;
 
-async function openFixture(page, body, { core=false } = {}) {
+async function openFixture(page, body, { core=false, coreText=CORE } = {}) {
   await page.route('https://chatgpt.com/**', route => route.fulfill({
     status: 200,
     contentType: 'text/html; charset=utf-8',
     body: html(body)
   }));
   await page.goto('https://chatgpt.com/c/ghostplus-fault-matrix');
-  await page.addScriptTag({ content: GM + '\n' + RUNTIME + (core ? '\n' + CORE : '') });
+  await page.addScriptTag({ content: GM + '\n' + RUNTIME + (core ? '\n' + coreText : '') });
   await page.waitForFunction(() => !!window.__ghostPlusRuntime);
   if (core) await expect(page.locator('#gitl9')).toBeVisible({ timeout: 5000 });
 }
@@ -276,6 +278,23 @@ test.describe('Ghost+ authoritative ChatGPT host-control fault matrix', () => {
     await page.locator('#gitl9 [data-a="play"]').click();
     await expect(page.locator('#gitl9 .status')).toContainText('Output quiet',{timeout:4000});
     expect(await page.evaluate(()=>window.__voiceClicks)).toBe(0);
+  });
+
+  test('adopting an unprimed answered chat does not auto-send the Ghost protocol on terminal drift', async ({ page }) => {
+    await openFixture(page,
+      '<article data-testid="conversation-turn-1" aria-label="You said:">Original submitted task</article>' +
+      '<article data-testid="conversation-turn-2" aria-label="ChatGPT said:"><div class="markdown">The task has already finished, no protocol marker.</div></article>' +
+      composer('<button id="composer-submit-button" type="button" data-testid="send-button" aria-label="Send prompt">↑</button>'),
+      { core:true, coreText:CORE_FAST_DRIFT }
+    );
+    await page.evaluate(() => {
+      window.__unprimedSendClicks=0;
+      document.getElementById('composer-submit-button').addEventListener('click',()=>window.__unprimedSendClicks++);
+    });
+    await page.locator('#gitl9 [data-a="play"]').click();
+    await expect(page.locator('#gitl9 .status')).toContainText('PAUSED',{timeout:7000});
+    await expect(page.locator('#gitl9 .status')).toContainText('terminal marker');
+    expect(await page.evaluate(()=>window.__unprimedSendClicks)).toBe(0);
   });
 
   test('ready Send with a staged user task dispatches once and only once', async ({ page }) => {

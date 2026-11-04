@@ -2,7 +2,7 @@
 'use strict';
 
 const ROOT='__ghostPlusRuntime';
-const VERSION='0.15.32';
+const VERSION='0.15.33';
 const previous=window[ROOT];
 try { if(previous?.active && typeof previous.destroy==='function') previous.destroy('reinject'); } catch (_) {}
 // Fail closed even if an older Tampermonkey installation still injects this loader
@@ -447,12 +447,25 @@ function domChatGptUserSnapshot(){
   const users=domChatGptTurns().filter(row=>row.role==='user');
   return{count:users.length,latestText:users.length?domNorm(users[users.length-1].text):''};
 }
+function domReceiptCompact(v){
+  return String(v??'')
+    .replace(/\u00a0/g,' ')
+    .replace(/[\u200B-\u200D\uFEFF]/g,'')
+    .replace(/\s+/g,'');
+}
 function domChatGptSubmissionObserved(previous,expectedText){
   // Never turn an existing matching message into a receipt when the
   // pre-submit snapshot was not captured.
   if(!previous||!Number.isFinite(previous.count)||typeof previous.latestText!=='string')return false;
   const target=domNorm(expectedText||''),current=domChatGptUserSnapshot();
-  if(!target||current.latestText!==target)return false;
+  if(!target)return false;
+  const exact=current.latestText===target;
+  // ChatGPT may render a submitted multiline prompt as adjacent text nodes
+  // and drop visual line-boundary whitespace. Accept only whitespace-only
+  // rendering drift, and only for a genuinely new user turn.
+  const whitespaceOnlyDrift=current.count>previous.count
+    &&domReceiptCompact(current.latestText)===domReceiptCompact(target);
+  if(!exact&&!whitespaceOnlyDrift)return false;
   return current.count>previous.count||current.latestText!==domNorm(previous.latestText);
 }
 function domChatGptTurns(){

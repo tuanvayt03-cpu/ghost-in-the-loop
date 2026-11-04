@@ -3,8 +3,14 @@ const {test,expect}=require('@playwright/test');
 const fs=require('fs'),path=require('path');
 const root=path.resolve(__dirname,'../..');
 const runtime=fs.readFileSync(path.join(root,'ghost-plus-runtime-manager.js'),'utf8');
-const core=fs.readFileSync(path.join(root,'ghost-in-the-loop.user.js'),'utf8').replace(/\/\/ ==UserScript==[\s\S]*?\/\/ ==\/UserScript==/m,'');
+const core=fs.readFileSync(path.join(root,'ghost-in-the-loop.user.js'),'utf8')
+  .replace(/\/\/ ==UserScript==[\s\S]*?\/\/ ==\/UserScript==/m,'')
+  .replace('window.__GITL_V9__ = true;',
+    'window.__coreTest={state:S,bootstrapPrompt};\nwindow.__GITL_V9__ = true;');
 const gate=fs.readFileSync(path.join(root,'ghost-plus-operator-gate.js'),'utf8');
+const watchdog=fs.readFileSync(path.join(root,'ghost-plus-companion-v2.js'),'utf8')
+  .replace('function addStyle() {',
+    'window.__watchdogTest={recover,captureSnapshot,recoveryPrompt,state:S};\nfunction addStyle() {');
 // Test-only diagnostic hook: no production export or operator bypass.
 const web=fs.readFileSync(path.join(root,'ghost-plus-web-recovery.js'),'utf8')
   .replace('RT.clearInterval(S.timer);',
@@ -17,7 +23,10 @@ window.GM_setClipboard=()=>{};
 window.GM_notification=()=>{};
 window.GM_xmlhttpRequest=()=>({abort(){}});
 `;
-function html(user=''){
+function html(user='',action='stop',assistant=''){
+  const actionButton=action==='send'
+    ?'<button id="composer-submit-button" data-testid="send-button" aria-label="Send prompt" type="button">↑</button>'
+    :'<button id="composer-submit-button" data-testid="stop-button" aria-label="Stop streaming" type="button">■</button>';
   return `<!doctype html><html><head><style>
     body{font:14px system-ui}
     form[data-type="unified-composer"]{position:fixed;bottom:15px;left:20%;right:20%}
@@ -25,16 +34,17 @@ function html(user=''){
     button{min-width:36px;min-height:36px}
   </style></head><body><main>
     ${user?'<article data-testid="conversation-turn-1" aria-label="You said:">'+user+'</article>':''}
+    ${assistant?'<article data-testid="conversation-turn-2" aria-label="ChatGPT said:"><div class="markdown">'+assistant+'</div></article>':''}
     <form data-type="unified-composer">
       <div id="prompt-textarea" role="textbox" contenteditable="true" aria-label="Message ChatGPT"></div>
-      <button id="composer-submit-button" data-testid="stop-button" aria-label="Stop streaming">■</button>
+      ${actionButton}
     </form>
   </main><div id="ghostplus-watch"></div></body></html>`;
 }
-async function boot(page,{withWeb=false,user=''}={}){
-  await page.route('https://chatgpt.com/**',route=>route.fulfill({status:200,contentType:'text/html',body:html(user)}));
+async function boot(page,{withWeb=false,withWatchdog=false,user='',action='stop',assistant=''}={}){
+  await page.route('https://chatgpt.com/**',route=>route.fulfill({status:200,contentType:'text/html',body:html(user,action,assistant)}));
   await page.goto('https://chatgpt.com/c/recovery-gate-test');
-  await page.addScriptTag({content:gm+'\n'+runtime+'\n'+core+'\n'+gate+(withWeb?'\n'+web:'')});
+  await page.addScriptTag({content:gm+'\n'+runtime+'\n'+core+'\n'+gate+(withWeb?'\n'+web:'')+(withWatchdog?'\n'+watchdog:'')});
   await page.waitForFunction(()=>!!window.__ghostPlusSupervisor&&!!document.querySelector('#gitl9'));
 }
 async function lock(page,overrides={}){
@@ -113,4 +123,61 @@ test('recovery in active Stop state remains observation-only, never HUMAN escala
     return {observed,attempted:window.__webTest.state.attemptedThisEpisode,locked:window.__ghostPlusSupervisor.isLocked()};
   });
   expect(result).toEqual({observed:true,attempted:true,locked:false});
+});
+
+test('watchdog recovery re-acquires Play after Stop re-renders the Ghost panel',async({page})=>{
+  await boot(page,{withWatchdog:true,user:'Original task',assistant:'Previous completed answer',action:'send'});
+  await page.evaluate(()=>{
+    window.__hostSendClicks=0;
+    const send=document.querySelector('#composer-submit-button');
+    send.addEventListener('click',()=>{
+      window.__hostSendClicks+=1;
+      const input=document.querySelector('#prompt-textarea');
+      const text=input.textContent||'';
+      const turn=document.createElement('article');
+      turn.setAttribute('data-testid','conversation-turn-99');
+      turn.setAttribute('aria-label','You said:');
+      turn.textContent=text;
+      document.querySelector('main').insertBefore(turn,document.querySelector('form'));
+      input.textContent='';
+      input.dispatchEvent(new Event('input',{bubbles:true}));
+    });
+  });
+  const transition=await page.evaluate(async()=>{
+    window.__beforePlayRef=document.querySelector('#gitl9 [data-a="play"]');
+    const snap=window.__watchdogTest.captureSnapshot(true);
+    await window.__watchdogTest.recover(snap,{allowStopped:true,source:'lease'});
+    return {
+      oldPlayConnected:!!window.__beforePlayRef?.isConnected,
+      freshPlayConnected:!!document.querySelector('#gitl9 [data-a="play"]')?.isConnected
+    };
+  });
+  expect(transition.oldPlayConnected).toBe(false);
+  expect(transition.freshPlayConnected).toBe(true);
+  const receiptState=await page.evaluate(()=>{
+    const current=window.__ghostPlusRuntime.dom.chatgptUserSnapshot();
+    const expected=window.__coreTest.bootstrapPrompt(window.__watchdogTest.recoveryPrompt());
+    const norm=v=>String(v||'').replace(/\s+/g,' ').trim();
+    return {
+      exactExpected:norm(expected)===norm(current.latestText),
+      observed:window.__ghostPlusRuntime.dom.chatgptSubmissionObserved(
+        {count:1,latestText:'Original task'},expected
+      )
+    };
+  });
+  expect(receiptState.exactExpected).toBe(false);
+  expect(receiptState.observed).toBe(true);
+  await expect.poll(()=>page.locator('#gitl9 .status').innerText(),{timeout:5000}).toContain('round 1/25');
+  const result=await page.evaluate(()=>({
+    running:/^RUNNING\b/i.test(document.querySelector('#gitl9 .status')?.innerText||''),
+    clicks:window.__hostSendClicks,
+    draft:(document.querySelector('#prompt-textarea')?.textContent||'').trim(),
+    users:document.querySelectorAll('article[aria-label^="You said"]').length,
+    recovering:window.__watchdogTest.state.recovering
+  }));
+  expect(result.clicks).toBe(1);
+  expect(result.users).toBe(2);
+  expect(result.draft).toBe('');
+  expect(result.recovering).toBe(false);
+  expect(result.running).toBe(true);
 });

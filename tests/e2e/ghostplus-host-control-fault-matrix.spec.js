@@ -473,6 +473,39 @@ test.describe('Ghost+ authoritative ChatGPT host-control fault matrix', () => {
     expect(await host(page)).toMatchObject({mode:'send',busy:false,ready:true,generating:false});
   });
 
+  test('assistant turn mutations keep BUSY even when ChatGPT exposes no recognizable Stop control', async ({ page }) => {
+    await openFixture(page,
+      '<article data-testid="conversation-turn-2" aria-label="ChatGPT said:"><div class="markdown">Starting analysis</div></article>' +
+      composer('<button aria-label="More actions" type="button">...</button>')
+    );
+    expect(await host(page)).toMatchObject({busy:false,mode:'idle'});
+    await page.evaluate(() => {
+      document.querySelector('article .markdown').textContent='Starting analysis\nNew streamed token';
+    });
+    expect(await host(page)).toMatchObject({mode:'busy',busy:true,generating:true,activityReason:'assistant-turn-settling'});
+  });
+
+  test('stable empty conversation remains monitor-idle when ChatGPT changes the action-button contract', async ({ page }) => {
+    await openFixture(page,
+      '<article data-testid="conversation-turn-1" aria-label="You said:">continue task</article>' +
+      '<article data-testid="conversation-turn-2" aria-label="ChatGPT said:"><div class="markdown">Completed output.</div></article>' +
+      composer('<button aria-label="More actions" type="button">...</button>')
+    );
+    expect(await host(page)).toMatchObject({
+      mode:'idle',busy:false,ready:false,why:'stable-conversation-no-action-control'
+    });
+  });
+
+  test('an unrecognized action control never gains Send authority for a staged draft', async ({ page }) => {
+    await openFixture(page,
+      '<article data-testid="conversation-turn-2" aria-label="ChatGPT said:"><div class="markdown">Previous result.</div></article>' +
+      composer('<button aria-label="More actions" type="button">...</button>','continue safely')
+    );
+    expect(await host(page)).toMatchObject({mode:'uncertain',busy:false,ready:false});
+    const result=await page.evaluate(()=>window.__ghostPlusRuntime.dom.actuateChatgptSend('continue safely'));
+    expect(result).toMatchObject({ok:false,attempted:false,mode:'uncertain'});
+  });
+
   test('exact managed-draft cleanup preserves unrelated user text', async ({ page }) => {
     await openFixture(page, composer(
       '<button id="composer-submit-button" data-testid="stop-button" aria-label="Stop streaming" type="button">■</button>',

@@ -203,7 +203,11 @@ const CHATGPT_COMPOSER_SELECTORS=Object.freeze([
   'div.ProseMirror[contenteditable="true"]',
   '[role="textbox"][contenteditable="true"]',
   'div[contenteditable="true"][data-placeholder]',
-  'textarea[data-id="root"]'
+  'textarea[data-id="root"]',
+  'main form [contenteditable="true"]',
+  'main form textarea',
+  'main [data-type="unified-composer"] [contenteditable="true"]',
+  'main [data-testid*="composer" i] [contenteditable="true"]'
 ]);
 function domNorm(v){return String(v??'').replace(/\u00a0/g,' ').replace(/\r/g,'').replace(/\s+/g,' ').trim()}
 function domTurnText(v){return String(v??'').replace(/\u00a0/g,' ').replace(/\r/g,'').replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim()}
@@ -529,6 +533,31 @@ function domChatGptActivitySurface(el,lastAssistant,composerRoot){
   }catch(_){}
   return'';
 }
+const CHATGPT_TURN_PROGRESS_TTL_MS=15000;
+let domTurnProgressSnapshot=null;
+function domChatGptTurnProgressState(){
+  const turns=domChatGptTurns(),now=Date.now();
+  const last=turns[turns.length-1]||null;
+  const text=last?domNorm(last.text):'';
+  const sig=[turns.length,last?.role||'',text].join('|');
+  if(!domTurnProgressSnapshot){
+    domTurnProgressSnapshot={sig,progressedAt:0,role:last?.role||'',count:turns.length};
+    return{busy:false,strong:false,reason:'turn-baseline',role:last?.role||'',count:turns.length};
+  }
+  if(domTurnProgressSnapshot.sig!==sig){
+    domTurnProgressSnapshot={sig,progressedAt:now,role:last?.role||'',count:turns.length};
+    const terminalAssistant=last?.role==='assistant'&&/\[\[(?:GITL|AOA)::(?:PROCEED|CONTINUE|HALT|HUMAN)\]\]/i.test(text);
+    if(terminalAssistant)return{busy:false,strong:false,reason:'assistant-terminal-turn',role:'assistant',count:turns.length};
+    return{busy:!!last,strong:false,reason:last?.role==='assistant'?'assistant-turn-progress':'user-turn-progress',role:last?.role||'',count:turns.length};
+  }
+  const age=domTurnProgressSnapshot.progressedAt?now-domTurnProgressSnapshot.progressedAt:Number.POSITIVE_INFINITY;
+  const terminalAssistant=last?.role==='assistant'&&/\[\[(?:GITL|AOA)::(?:PROCEED|CONTINUE|HALT|HUMAN)\]\]/i.test(text);
+  if(terminalAssistant)return{busy:false,strong:false,reason:'assistant-terminal-turn',role:'assistant',count:turns.length,ageMs:age};
+  if(last?.role==='assistant'&&domTurnProgressSnapshot.progressedAt&&age<=CHATGPT_TURN_PROGRESS_TTL_MS){
+    return{busy:true,strong:false,reason:'assistant-turn-settling',role:'assistant',count:turns.length,ageMs:age};
+  }
+  return{busy:false,strong:false,reason:'turn-stable',role:last?.role||'',count:turns.length,ageMs:age};
+}
 function domChatGptActivityState(){
   if(!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname))return{busy:false,strong:false,reason:'unsupported-host'};
   // Only composer-linked Stop may establish strong generation evidence.
@@ -540,6 +569,12 @@ function domChatGptActivityState(){
   if(domChatGptFaultSuppressesWeakBusy(fault.type)){
     return{busy:false,strong:false,reason:`fault-idle:${fault.type}`,faultType:fault.type};
   }
+
+  // Modern ChatGPT can stream assistant text while the composer action is
+  // portalized, renamed, or temporarily absent. Turn mutation is therefore an
+  // independent BUSY witness instead of relying on a particular Stop selector.
+  const turnProgress=domChatGptTurnProgressState();
+  if(turnProgress.busy)return turnProgress;
 
   // Weak activity is trusted only on the latest assistant turn or the
   // active composer surface. Page-global status/progress nodes are also used
@@ -756,6 +791,21 @@ function domChatGptStopGlyph(el){
   }catch(_){}
   return false;
 }
+function domChatGptSendGlyph(el){
+  if(!el||domChatGptStopGlyph(el))return false;
+  const meta=domChatGptSendMeta(el);
+  if(meta.text||meta.label||meta.title||meta.testid||meta.id)return false;
+  try{
+    const paths=[...el.querySelectorAll('svg path')];
+    return paths.some(path=>{
+      const d=String(path.getAttribute('d')||'').replace(/\s+/g,' ').trim();
+      // Bounded fallback for ChatGPT's unlabeled upward-arrow composer action.
+      // Do not generalize arbitrary icon-only neighbors into Send authority.
+      return /M\s*12(?:\.0+)?\s*19(?:\.0+)?\s*V\s*5(?:\.0+)?/i.test(d)
+        &&/M\s*5(?:\.0+)?\s*12(?:\.0+)?\s*l\s*7(?:\.0+)?\s*-7(?:\.0+)?\s*7(?:\.0+)?\s*7(?:\.0+)?/i.test(d);
+    });
+  }catch(_){return false}
+}
 function domChatGptAuxControl(el){
   const meta=domChatGptSendMeta(el);
   return CHATGPT_AUX_CONTROL_RE.test(meta.semantic)&&!meta.send&&!meta.stop;
@@ -836,8 +886,13 @@ function domChatGptSendCandidates(){
   const fallback=domChatGptPrimaryFallback(root);
   if(fallback&&!seen.has(fallback.el)&&!domChatGptStopGlyph(fallback.el)){
     const meta=domChatGptSendMeta(fallback.el);
+    // Composer text is never Send authority. ChatGPT frequently places model,
+    // tools, voice, attachment and overflow controls beside the composer.
+    // Unknown proximity must remain diagnostic-only.
     const composerHasText=!!domReadComposer();
-    if(meta.send||composerHasText)out.push({el:fallback.el,meta:{...meta,send:true,stop:false},score:Math.max(900,fallback.score)});
+    if(meta.send||(composerHasText&&domChatGptSendGlyph(fallback.el))){
+      out.push({el:fallback.el,meta:{...meta,send:true,stop:false},score:Math.max(900,fallback.score)});
+    }
   }
   // The live ChatGPT action may be a sibling of the composer form.
   // Outside the form we require explicit Send semantics; never guess from
@@ -922,6 +977,14 @@ function domChatGptHostControlState(){
   }
   if(activity.busy)return{mode:'busy',busy:true,ready:false,found:false,why:'activity-busy',activityReason:activity.reason,el:null,source:'activity'};
   if(resting.idle)return{mode:'idle',busy:false,ready:false,found:true,why:resting.why,el:resting.el,source:'control',idleKind:'composer'};
+  // Decouple observation authority from Send authority. A stable conversation
+  // with an empty composer is safe to monitor even when ChatGPT has changed or
+  // portalized the action button. This does NOT authorize a Send: staging text
+  // still requires a separately verified ready Send control.
+  const turns=domChatGptTurns();
+  if(!domReadComposer(composer)&&turns.length){
+    return{mode:'idle',busy:false,ready:false,found:true,why:'stable-conversation-no-action-control',el:null,source:'conversation',idleKind:'monitor'};
+  }
   return{mode:'uncertain',busy:false,ready:false,found:false,why:'host-control-unresolved',el:null,source:'none'};
 }
 function domChatGptSendState(){

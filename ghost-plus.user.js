@@ -1,19 +1,19 @@
 // ==UserScript==
 // @name         Ghost in the Loop +
 // @namespace    https://github.com/tuanvayt03-cpu/ghost-in-the-loop
-// @version      9.0.0-alpha.2+ghostplus.15.32
+// @version      9.0.0-alpha.2+ghostplus.15.33
 // @description  Ghost in the Loop with owned runtime lifecycle, persistent operator gate, Telegram alerts, busy-aware recovery and safe unload.
 // @author       Michael S (CTRL-AI) + tuanvayt03-cpu
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
-// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/269df83020356cf3db2a2abe63cb8115dd0b5b7a/ghost-plus-runtime-manager.js
+// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/ee50ebf9c1786a8ed2682361ad38d1ddd2e5c925/ghost-plus-runtime-manager.js
 // @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/41c41c8463082a093ebdbe480af54054e2db5608/ghost-plus-alert-router.js
 // @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/41c41c8463082a093ebdbe480af54054e2db5608/ghost-plus-telegram.js
 // @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/41c41c8463082a093ebdbe480af54054e2db5608/ghost-plus-turn-budget-v2.js
 // @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/41c41c8463082a093ebdbe480af54054e2db5608/ghost-in-the-loop.user.js
 // @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/41c41c8463082a093ebdbe480af54054e2db5608/ghost-plus-operator-gate.js
 // @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/41c41c8463082a093ebdbe480af54054e2db5608/ghost-plus-uncertain-reconcile.js
-// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/41c41c8463082a093ebdbe480af54054e2db5608/ghost-plus-companion-v2.js
+// @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/ee50ebf9c1786a8ed2682361ad38d1ddd2e5c925/ghost-plus-companion-v2.js
 // @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/41c41c8463082a093ebdbe480af54054e2db5608/ghost-plus-core-busy-gate.js
 // @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/41c41c8463082a093ebdbe480af54054e2db5608/ghost-plus-context-boundary.js
 // @require      https://raw.githubusercontent.com/tuanvayt03-cpu/ghost-in-the-loop/41c41c8463082a093ebdbe480af54054e2db5608/ghost-plus-web-recovery.js

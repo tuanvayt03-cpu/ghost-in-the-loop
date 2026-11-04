@@ -797,6 +797,23 @@ test('ChatGPT message receipt requires new matching user text rather than Stop, 
   expect(rt.dom.chatgptSubmissionObserved(before,'run exact checklist')).toBe(true);
 });
 
+test('receipt accepts only whitespace rendering drift on a genuinely new user turn',()=>{
+  document.body.innerHTML=`
+    <main>
+      <div data-turn-key="a"><div data-user-message-bubble>previous request</div></div>
+    </main>`;
+  const rt=boot(),before=rt.dom.chatgptUserSnapshot();
+  const expected='[WATCHDOG RECOVERY STATUS PROBE]\nFirst reconcile the current state.\n[[GITL::PROCEED]]';
+  const group=document.createElement('div');
+  group.setAttribute('data-turn-key','b');
+  group.innerHTML='<div data-user-message-bubble>[WATCHDOG RECOVERY STATUS PROBE]First reconcile the current state.[[GITL::PROCEED]]</div>';
+  document.querySelector('main').appendChild(group);
+  expect(rt.dom.chatgptSubmissionObserved(before,expected)).toBe(true);
+  document.querySelector('[data-turn-key="b"] [data-user-message-bubble]').textContent=
+    '[WATCHDOG RECOVERY STATUS PROBE]First reconcile a DIFFERENT state.[[GITL::PROCEED]]';
+  expect(rt.dom.chatgptSubmissionObserved(before,expected)).toBe(false);
+});
+
 test('missing pre-submit snapshot cannot acknowledge an already visible matching user message',()=>{
   document.body.innerHTML=`<main><div data-turn-key="a"><div data-user-message-bubble>continue safely</div></div></main>`;
   const rt=boot();

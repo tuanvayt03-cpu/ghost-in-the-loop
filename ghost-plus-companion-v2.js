@@ -513,8 +513,8 @@ async function recover(snap,{allowStopped=false,source='idle'}={}) {
     S.suspectAt = now(); return;
   }
 
-  const gs = ghostStop(), gp = ghostPlay();
-  if (!visible(gs) || !visible(gp)) {
+  const gs = ghostStop();
+  if (!visible(gs) || !visible(ghostPlay())) {
     notice('Ghost+ watchdog', 'Không tìm thấy nút điều khiển Ghost đáng tin cậy. Dừng recovery.');
     return;
   }
@@ -553,9 +553,20 @@ async function recover(snap,{allowStopped=false,source='idle'}={}) {
       :'Không xác nhận được Send control trước recovery. Hủy probe, không gửi.');
     return;
   }
-  try { gp.click(); } catch (e) {
+  // Stop() re-renders the Ghost panel via innerHTML, so any Play node
+  // captured before Stop is detached. Re-acquire the live control only after
+  // staging and the final host-control safety check.
+  const livePlay=ghostPlay();
+  if(!visible(livePlay)){
+    await window.__ghostPlusRuntime?.dom?.clearComposerIfExact?.(prompt,RT,{verifyMs:1200});
+    S.recovering=false;
+    notice('Ghost+ watchdog','Nút Play mới không còn khả dụng sau Stop; đã hủy recovery probe an toàn.');
+    return;
+  }
+  try { livePlay.click(); } catch (e) {
+    await window.__ghostPlusRuntime?.dom?.clearComposerIfExact?.(prompt,RT,{verifyMs:1200});
     S.recovering = false;
-    notice('Ghost+ watchdog', 'Không khởi động lại Ghost: ' + String(e?.message || e));
+    notice('Ghost+ watchdog', 'Không khởi động lại Ghost; đã hủy recovery probe an toàn: ' + String(e?.message || e));
     return;
   }
 

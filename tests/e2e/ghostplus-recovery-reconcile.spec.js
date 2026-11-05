@@ -14,7 +14,7 @@ const watchdog=fs.readFileSync(path.join(root,'ghost-plus-companion-v2.js'),'utf
 // Test-only diagnostic hook: no production export or operator bypass.
 const web=fs.readFileSync(path.join(root,'ghost-plus-web-recovery.js'),'utf8')
   .replace('RT.clearInterval(S.timer);',
-    'window.__webTest={beginRecoveryAttempt,recoveryAcceptanceObserved,observeActiveRecovery,state:S};\nRT.clearInterval(S.timer);');
+    'window.__webTest={beginRecoveryAttempt,recoveryAcceptanceObserved,observeActiveRecovery,sendRecoveryProbe,state:S};\nRT.clearInterval(S.timer);');
 const gm=`
 window.__values={};
 window.GM_getValue=(k,d)=>Object.prototype.hasOwnProperty.call(window.__values,k)?window.__values[k]:d;
@@ -180,4 +180,49 @@ test('watchdog recovery re-acquires Play after Stop re-renders the Ghost panel',
   expect(result.draft).toBe('');
   expect(result.recovering).toBe(false);
   expect(result.running).toBe(true);
+});
+
+test('web recovery re-acquires Play and accepts the core-confirmed wrapped probe while a waiting task is idle',async({page})=>{
+  await boot(page,{withWeb:true,user:'Start release build',assistant:'CI is still running; continue polling until the artifact is ready.',action:'send'});
+  await page.evaluate(()=>{
+    window.__hostSendClicks=0;
+    const send=document.querySelector('#composer-submit-button');
+    send.addEventListener('click',()=>{
+      window.__hostSendClicks+=1;
+      const input=document.querySelector('#prompt-textarea');
+      const text=input.textContent||'';
+      const turn=document.createElement('article');
+      turn.setAttribute('data-testid','conversation-turn-99');
+      turn.setAttribute('aria-label','You said:');
+      turn.textContent=text;
+      document.querySelector('main').insertBefore(turn,document.querySelector('form'));
+      input.textContent='';
+      input.dispatchEvent(new Event('input',{bubbles:true}));
+    });
+  });
+  const transition=await page.evaluate(async()=>{
+    window.__beforeWebPlayRef=document.querySelector('#gitl9 [data-a="play"]');
+    await window.__webTest.sendRecoveryProbe({
+      key:'wait-fault',
+      active:true,
+      blockedType:'',
+      streamDesync:false,
+      status:'idle waiting',
+      error:{type:'MESSAGE_DELIVERY_TIMEOUT',text:'Message delivery timed out'}
+    });
+    return {
+      oldPlayConnected:!!window.__beforeWebPlayRef?.isConnected,
+      freshPlayConnected:!!document.querySelector('#gitl9 [data-a="play"]')?.isConnected,
+      clicks:window.__hostSendClicks,
+      locked:window.__ghostPlusSupervisor.isLocked(),
+      status:document.querySelector('#gitl9 .status')?.innerText||'',
+      attempted:window.__webTest.state.attemptedThisEpisode
+    };
+  });
+  expect(transition.oldPlayConnected).toBe(false);
+  expect(transition.freshPlayConnected).toBe(true);
+  expect(transition.clicks).toBe(1);
+  expect(transition.locked).toBe(false);
+  expect(transition.attempted).toBe(true);
+  expect(transition.status).toContain('round 1/25');
 });

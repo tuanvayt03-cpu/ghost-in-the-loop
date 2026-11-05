@@ -26,7 +26,7 @@ const K = Object.freeze({
   auto: 'ghostplus.auto',
   budget: 'ghostplus.recoveryBudget',
   correction: 'ghostplus.pendingCorrection',
-  lease: 'ghostplus.continuityLeaseStartedAt'
+  lease: 'ghostplus.continuityLeaseStartedAt.v2:'
 });
 
 const q = (s, r = document) => r.querySelector(s);
@@ -148,8 +148,9 @@ function latestTerminalType(){
   if(line==='[[GITL::PROCEED]]'||line==='[[AOA::CONTINUE]]')return'proceed';
   return'bad';
 }
-function leaseStartedAt(){return Number(GM_getValue(K.lease,0))||0}
-function clearLease(){try{GM_setValue(K.lease,0)}catch(_){}}
+function leaseKey(){return K.lease+location.host+location.pathname}
+function leaseStartedAt(){try{return Number(sessionStorage.getItem(leaseKey()))||0}catch(_){return 0}}
+function clearLease(){try{sessionStorage.setItem(leaseKey(),'0')}catch(_){}}
 function leaseRemaining(){const s=leaseStartedAt();return s?Math.max(0,CFG.continuityLeaseMs-(now()-s)):0}
 
 function semanticStopButtons() {
@@ -489,7 +490,7 @@ function contextBoundaryActive() {
 }
 
 async function recover(snap,{allowStopped=false,source='idle'}={}) {
-  if (!RT.alive() || S.recovering || (!ghostRunning()&&!allowStopped) || ghostUncertain() || operatorLocked()) return;
+  if (!RT.alive() || S.recovering || (!ghostRunning()&&!allowStopped) || ghostUncertain() || operatorLocked() || window.__ghostCoreSendJournal?.hasUnresolved?.()) return;
   const fresh = captureSnapshot();
   if (fresh.busy.busy) {
     S.suspectAt = 0;

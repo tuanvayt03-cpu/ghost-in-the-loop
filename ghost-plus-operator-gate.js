@@ -34,7 +34,7 @@ function focusNoScroll(el) {
 }
 
 const KG='ghostplus.gates.v1', KA='ghostplus.gateAck.v1', KS='ghostplus.gateSeq.v1';
-const S={key:'',gate:null,last:'',busy:false,msg:'',titleKey:'',titleBase:'',titleLastRendered:''};
+const S={key:'',gate:null,last:'',busy:false,resumePending:null,msg:'',titleKey:'',titleBase:'',titleLastRendered:''};
 function hash(v){const s=String(v||'');let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return `${s.length}:${(h>>>0).toString(16)}`}
 function path(){return String(location.pathname||'/').split(/[?#]/)[0]}
 function key(){const p=path(),id=p.match(/\/c\/([^/]+)/i)?.[1];return id?`c:${id}`:`p:${p}`}
@@ -128,8 +128,8 @@ function reason(t){const a=String(t||'').split(/\r?\n/);while(a.length&&/^\s*\[\
 function chat(){try{return window.__ghostPlusCurrentChatName?.()||'ChatGPT'}catch(_){return'ChatGPT'}}
 function emit(e){try{return window.__ghostPlusAlerts?.emit({chat:chat(),path:path(),...e})}catch(_){}try{GM_notification?.({title:e.title||'Ghost+',text:e.text||'',timeout:12000})}catch(_){}}
 async function setComposer(text){const e=composer();if(!e||ctext(e))return false;const dom=window.__ghostPlusRuntime?.dom;if(dom?.stageComposerText){const staged=await dom.stageComposerText(text,RT,{requireEmpty:true,verifyMs:1800});return !!staged?.ok}const preservedSelection=captureExternalSelection(e);try{focusNoScroll(e);if(e.isContentEditable){const r=document.createRange();r.selectNodeContents(e);const s=getSelection();s.removeAllRanges();s.addRange(r);let ok=false;try{ok=document.execCommand('insertText',false,text)}catch(_){}if(!ok)e.textContent=text;e.dispatchEvent(new Event('input',{bubbles:true}))}else{const p=e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,st=Object.getOwnPropertyDescriptor(p,'value')?.set;if(st)st.call(e,text);else e.value=text;e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}))}}catch(_){return false}finally{restoreExternalSelection(preservedSelection)}return ctext(composer())===norm(text)}
-function lock(type,data={}){const k=key(),h=data.h||'',old=gate(k);if(old&&old.type===type&&(!h||old.h===h)){S.gate=old;enforce();return old}const g={type,id:episode(type),since:now(),h,reason:norm(data.reason),model:norm(data.model),source:norm(data.source),transient:norm(data.transient),autoReconcile:!!data.autoReconcile,baselineUsers:Number.isFinite(data.baselineUsers)?data.baselineUsers:null,baselineAssistants:Number.isFinite(data.baselineAssistants)?data.baselineAssistants:null,baselineAssistantHash:norm(data.baselineAssistantHash),faultKey:norm(data.faultKey),path:path(),chat:chat()};save(k,g);S.key=k;S.gate=g;stop();enforce();const m=meta(type);emit({id:`gate:${g.id}`,type,severity:'critical',group:'operator',title:`Ghost+ · ${m.label}`,text:`${m.label} · ${g.id}${g.reason?` · ${g.reason.slice(0,150)}`:''}`,episodeId:g.id,reason:g.reason,source:'gate'});return g}
-function clear(stopped=false){const g=S.gate||gate();if(g?.h)saveAck(key(),g.h);save(key(),null);S.gate=null;S.msg=stopped?'Job stopped by operator.':'';document.documentElement.removeAttribute('data-ghostplus-gate');restoreTabTitle();const m=q('#ghostplus-mini');if(m&&m.textContent==='⚠')m.textContent='👻';render()}
+function lock(type,data={}){const k=key(),h=data.h||'',old=gate(k);if(old&&old.type===type&&(!h||old.h===h)){S.gate=old;enforce();return old}const g={type,id:episode(type),since:now(),h,reason:norm(data.reason),model:norm(data.model),source:norm(data.source),transient:norm(data.transient),autoReconcile:!!data.autoReconcile,baselineUsers:Number.isFinite(data.baselineUsers)?data.baselineUsers:(type==='HUMAN_REQUIRED'&&/^Protocol drift repeated \d+ times\. Human review required\.$/.test(String(data.reason||''))?users():null),baselineAssistants:Number.isFinite(data.baselineAssistants)?data.baselineAssistants:null,baselineAssistantHash:norm(data.baselineAssistantHash),faultKey:norm(data.faultKey),path:path(),chat:chat()};save(k,g);S.key=k;S.gate=g;stop();enforce();const m=meta(type);emit({id:`gate:${g.id}`,type,severity:'critical',group:'operator',title:`Ghost+ · ${m.label}`,text:`${m.label} · ${g.id}${g.reason?` · ${g.reason.slice(0,150)}`:''}`,episodeId:g.id,reason:g.reason,source:'gate'});return g}
+function clear(stopped=false){S.resumePending=null;const g=S.gate||gate();if(g?.h)saveAck(key(),g.h);save(key(),null);S.gate=null;S.msg=stopped?'Job stopped by operator.':'';document.documentElement.removeAttribute('data-ghostplus-gate');restoreTabTitle();const m=q('#ghostplus-mini');if(m&&m.textContent==='⚠')m.textContent='👻';render()}
 function clearLegacyOperationalGate(){
   const g=S.gate||gate();
   if(!g||g.type!=='HUMAN_REQUIRED'||g.h||g.source)return false;
@@ -163,61 +163,116 @@ function clearV01513FalseTriageGate(){
   },0);
   return true;
 }
+function legacyProtocolDriftGate(g){
+  return !!g&&g.type==='HUMAN_REQUIRED'&&!g.h&&!g.source
+    &&/^Protocol drift repeated \d+ times\. Human review required\.$/.test(String(g.reason||''));
+}
 function autoReconcileTransientGate(){
   const g=S.gate||gate();
-  if(!g||g.type!=='HUMAN_REQUIRED'||g.transient!=='WEB_SEND_UNCERTAIN'||!g.autoReconcile)return false;
-  const latestText=latest(), [ty]=term(latestText);
-  if(ty==='human'||ty==='relay')return false;
-  const bu=Number.isFinite(g.baselineUsers)?g.baselineUsers:null;
-  const ba=Number.isFinite(g.baselineAssistants)?g.baselineAssistants:null;
-  const userAdvanced=bu!==null&&users()>bu;
-  const assistantAdvanced=ba!==null&&assistants()>ba;
-  const assistantTextAdvanced=!!g.baselineAssistantHash
-    &&hash(latest())!==g.baselineAssistantHash
-    &&!!latest();
-  const busy=modelBusy();
-  // Stop alone cannot prove a recovery request was accepted.
-  // Only confirmed progress may release this transient gate.
-  if(!userAdvanced&&!assistantAdvanced&&!assistantTextAdvanced)return false;
-  const why=userAdvanced?'user-turn-advanced'
-    :assistantAdvanced?'assistant-turn-advanced':'assistant-content-advanced';
-  const id=g.id;
+  if(!g||g.type!=='HUMAN_REQUIRED'||S.resumePending)return false;
+  let why='';
+  if(legacyProtocolDriftGate(g)){
+    // Only a manual user turn newer than the captured drift gate qualifies.
+    // Existing persisted legacy gates without a baseline require explicit
+    // operator review, never guess from the current conversation snapshot.
+    if(!Number.isFinite(g.baselineUsers)||users()<=g.baselineUsers)return false;
+    if(window.__ghostCoreSendJournal?.hasUnresolved?.())return false;
+    why='verified-manual-user-after-drift';
+  }else if(g.transient==='WEB_SEND_UNCERTAIN'&&g.autoReconcile){
+    // A different user turn or assistant progression is NOT a receipt for
+    // an uncertain Send. Require Core's exact durable transaction evidence.
+    const core=window.__ghostCoreSendJournal;
+    if(!core?.latest)return false;
+    core.reconcile?.();
+    const txn=core.latest();
+    if(!txn||txn.stage!=='CONFIRMED'||txn.lateReconciled!==true
+      ||!Number.isFinite(txn.confirmedAt)||txn.confirmedAt<g.since)return false;
+    why='verified-core-send-receipt';
+  }else return false;
+  const id=g.id,busy=modelBusy();
   clear(false);
-  S.msg=`Auto-reconciled ${id}: ${why}.`;
-  emit({id:`gate-auto-clear:${id}`,type:'GATE_AUTO_RECONCILED',severity:'info',group:'operator',title:'Ghost+ auto-reconciled transient HUMAN',text:`${id} · ${why}`,episodeId:id,reason:why,source:'gate',desktop:false});
+  S.msg=`Reconciled ${id}: ${why}. No replay.`;
+  emit({id:`gate-auto-clear:${id}`,type:'GATE_AUTO_RECONCILED',severity:'info',group:'operator',
+    title:'Ghost+ verified gate reconciliation',text:`${id} · ${why}`,episodeId:id,reason:why,source:'gate',desktop:false});
   if(busy){
     RT.timeout(()=>{
-      if(!RT.alive()||gate()||!modelBusy())return;
+      if(!RT.alive()||gate()||!modelBusy()||ctext())return;
       try{play()?.click()}catch(_){}
     },0);
   }
   return true;
 }
 function style(){if(q('#ghostplus-gate-style'))return;const s=document.createElement('style');s.id='ghostplus-gate-style';s.textContent=`html[data-ghostplus-gate] #ghostplus-mini{box-shadow:0 0 0 3px rgba(239,68,68,.6),0 8px 24px rgba(15,23,42,.18)!important;background:#fff1f2!important;color:#991b1b!important}#ghostplus-gate{margin-top:6px;padding:7px;border:1px solid rgba(239,68,68,.4);border-radius:8px;background:#fff1f2;color:#7f1d1d;font:10px/1.35 system-ui}#ghostplus-gate .r{display:flex;gap:4px;margin-top:5px}#ghostplus-gate input{min-width:0;flex:1;font:10px system-ui;padding:4px}#ghostplus-gate button{font:10px system-ui;padding:4px 6px}`;document.documentElement.appendChild(s);RT.node(s)}
-function ui(){style();const h=q('#ghostplus-watch');if(!h)return null;let r=q('#ghostplus-gate',h);if(r)return r;r=document.createElement('div');r.id='ghostplus-gate';r.innerHTML=`<div><b data-t></b> <span data-id></span></div><div data-r style="margin-top:3px;max-height:54px;overflow:auto"></div><div class="r"><input data-note placeholder="Phản hồi/ghi chú"><button data-resume>Resume</button><button data-stop>Stop</button></div><div data-msg style="margin-top:3px"></div>`;h.appendChild(r);RT.node(r);q('[data-resume]',r).onclick=e=>{if(!e.isTrusted)return;resume()};q('[data-stop]',r).onclick=e=>{if(!e.isTrusted)return;stop();clear(true)};return r}
+function ui(){style();const h=q('#ghostplus-watch');if(!h)return null;let r=q('#ghostplus-gate',h);if(r)return r;r=document.createElement('div');r.id='ghostplus-gate';r.innerHTML=`<div><b data-t></b> <span data-id></span></div><div data-r style="margin-top:3px;max-height:54px;overflow:auto"></div><div class="r"><input data-note placeholder="Phản hồi/ghi chú"><button data-resume>Resume</button><button data-stop>Dừng Ghost</button></div><div data-msg style="margin-top:3px"></div>`;h.appendChild(r);RT.node(r);q('[data-resume]',r).onclick=e=>{if(!e.isTrusted)return;resume()};q('[data-stop]',r).onclick=e=>{if(!e.isTrusted)return;stop();clear(true)};return r}
 function render(){const r=ui(),g=S.gate||gate();if(!r)return;if(!g){r.style.display='none';return}S.gate=g;const m=meta(g.type);r.style.display='block';q('[data-t]',r).textContent=`${m.icon} ${m.label}`;q('[data-id]',r).textContent=g.id;q('[data-r]',r).textContent=g.model?`${g.reason||'Model relay requested'} · ${g.model}`:(g.reason||'Đang chờ người dùng.');q('[data-msg]',r).textContent=S.msg||'Auto Play/recovery đang bị khóa.'}
-function enforce(){const g=S.gate||gate();if(!g)return;S.gate=g;document.documentElement.setAttribute('data-ghostplus-gate',g.type);const st=q('#gitl9 .status');if(st)st.innerHTML=`<b>PAUSED</b> · ${g.type}<br>${g.id}${modelBusy()?' · ChatGPT đang làm việc (Ghost khóa riêng)':''}`;const m=q('#ghostplus-mini'),gm=meta(g.type);if(m){m.textContent='⚠';m.title=`${g.type} · ${g.id}`}setGateTabTitle(g.type);render();guardDraft()}
+function enforce(){const g=S.gate||gate();if(!g)return;S.gate=g;document.documentElement.setAttribute('data-ghostplus-gate',g.type);const st=q('#gitl9 .status');if(st)st.innerHTML=`<b>PAUSED</b> · ${g.type}<br>${g.id} · Controller: HARD_GATE · Host: ${modelBusy()?'BUSY (không can thiệp)':'IDLE'}`;const m=q('#ghostplus-mini'),gm=meta(g.type);if(m){m.textContent='⚠';m.title=`${g.type} · ${g.id}`}setGateTabTitle(g.type);render();guardDraft()}
 function guardDraft(){if(!S.gate)return;const e=composer(),t=ctext(e);if(!/^\[(WEB|WATCHDOG) RECOVERY STATUS PROBE\]/i.test(t))return;try{if(e.isContentEditable){e.textContent='';e.dispatchEvent(new Event('input',{bubbles:true}))}else{e.value='';e.dispatchEvent(new Event('input',{bubbles:true}))}S.msg='Đã chặn recovery probe trong lúc gate khóa.';render()}catch(_){}}
 async function resume(){
-  if(S.busy)return;
+  if(S.busy||S.resumePending)return;
   const g=S.gate||gate();if(!g)return;
   if(modelBusy()){
-    if(g.type==='HUMAN_REQUIRED'&&g.transient==='WEB_SEND_UNCERTAIN'){
-      // Explicit operator approval while a ChatGPT turn is active.
-      // Clear only this transient gate; adopt the turn without any Send.
+    if(g.type==='HUMAN_REQUIRED'&&(g.transient==='WEB_SEND_UNCERTAIN'||legacyProtocolDriftGate(g))){
+      // An explicit operator click can adopt the active turn. No Send and
+      // no replay, even when the legacy protocol gate lacks turn baseline.
+      if(ctext()){S.msg='Ô nhập đang có draft; không adopt khi draft chưa được xử lý.';render();return}
       const id=g.id;clear(false);
       S.msg=`Operator resumed ${id}: adopted active ChatGPT turn without Send.`;
       emit({id:`manual-adopt:${id}`,type:'GATE_RESUMED',severity:'info',group:'operator',title:'Ghost+ adopted active turn',text:id,episodeId:id,desktop:false});
       RT.timeout(()=>{if(RT.alive()&&!gate()&&modelBusy()&&!ctext())try{play()?.click()}catch(_){}},0);
       return;
     }
-    S.msg='ChatGPT đang tạo phản hồi. Chờ Stop biến mất trước khi Resume gate này.';
+    S.msg='ChatGPT đang tạo phản hồi. Chờ lượt hiện tại kết thúc, không gửi trùng.';
     render();return;
   }
   if(ctext()){S.msg='Ô nhập đang có draft. Hãy gửi/xóa draft trước khi Resume.';render();return}
-  S.busy=true;const note=norm(q('#ghostplus-gate [data-note]')?.value||''),p=['[OPERATOR GATE RESOLVED]','A human explicitly authorized continuation.',note?`Operator response: ${note}`:'Continue from the exact paused checkpoint.','Do not restart or repeat completed work. Reconcile uncertain prior side effects before new ones.','Keep the Ghost protocol and end with exactly one valid terminal control line.'].join('\n');stop();await sleep(100);if(!RT.alive()){S.busy=false;return}if(!await setComposer(p)){S.busy=false;S.msg='Không stage được resume prompt; gate vẫn khóa.';render();return}if(g.type==='RECOVERY_EXHAUSTED'){try{window.__ghostPlusWatchdog?.resetRecoveryEpisode?.()}catch(_){}}if(g.h)saveAck(key(),g.h);save(key(),null);S.gate=null;document.documentElement.removeAttribute('data-ghostplus-gate');restoreTabTitle();const b=play(),before=users();try{b?.click()}catch(_){}const start=now();let ok=false;while(now()-start<4000){if(/^RUNNING\b/i.test(status())||users()>before){ok=true;break}await sleep(200);if(!RT.alive()){S.busy=false;return}}S.busy=false;if(!ok){lock(g.type,{h:g.h,reason:g.reason,model:g.model});S.msg='Resume chưa xác nhận; gate đã khóa lại.';render()}else emit({id:`resumed:${g.id}`,type:'GATE_RESUMED',severity:'info',group:'operator',title:'Ghost+ resumed',text:g.id,episodeId:g.id,desktop:false})}
-function evaluate(){const k=key();if(k!==S.key){if(S.titleLastRendered)restoreTabTitle();S.key=k;S.gate=gate(k);S.last='';resetTabTitleKey()}if(S.gate){if(clearLegacyOperationalGate())return;if(clearV01513FalseTriageGate())return;if(autoReconcileTransientGate())return;enforce();return}if(q('#ghostplus-context-boundary-state')){lock('CONTEXT_BOUNDARY',{reason:'Context limit reached; manual handoff to a new chat is required.'});return}if(modelBusy()){render();return}const t=latest(),h=hash(t);if(t&&h!==S.last){S.last=h;const [ty,model]=term(t);if(ty==='human'&&ack(k)!==h)lock('HUMAN_REQUIRED',{h,reason:reason(t)});else if(ty==='relay'&&ack(k)!==h)lock('MODEL_RELAY',{h,reason:reason(t),model})}if(S.gate)enforce();else{if(S.titleLastRendered)restoreTabTitle();render()}}
-RT.listen(document,'click',e=>{const b=e.target instanceof Element?e.target.closest('#gitl9 [data-a="play"]'):null,g=S.gate||gate();if(!b||!g)return;e.preventDefault();e.stopImmediatePropagation();S.msg=`Play bị khóa bởi ${g.type} · ${g.id}.`;render()},true);
+  S.busy=true;
+  const note=norm(q('#ghostplus-gate [data-note]')?.value||'');
+  const p=['[OPERATOR GATE RESOLVED]','A human explicitly authorized continuation.',
+    note?`Operator response: ${note}`:'Continue from the exact paused checkpoint.',
+    'Do not restart or repeat completed work. Reconcile uncertain prior side effects before new ones.',
+    'Keep the Ghost protocol and end with exactly one valid terminal control line.'].join('\n');
+  stop();await sleep(100);
+  if(!RT.alive()){S.busy=false;return}
+  if(!await setComposer(p)){
+    S.busy=false;S.msg='Không stage được resume prompt; gate vẫn khóa.';render();return;
+  }
+  if(g.type==='RECOVERY_EXHAUSTED')try{window.__ghostPlusWatchdog?.resetRecoveryEpisode?.()}catch(_){}
+  // Keep the gate persisted and locked against all other recovery writers.
+  // Only this explicit Resume's Core receipt may commit gate clearance.
+  S.resumePending={id:g.id,chatKey:key(),startedAt:now()};
+  S.msg='Đã stage Resume; chờ Core xác nhận user-turn receipt trước khi mở gate.';
+  render();
+  const b=play();
+  if(!b||!b.isConnected){
+    S.resumePending=null;S.busy=false;S.msg='Play chưa khả dụng; gate vẫn khóa và không retry.';render();return;
+  }
+  try{b.click()}catch(e){
+    S.resumePending=null;S.busy=false;
+    S.msg='Play thất bại trước Send; gate vẫn khóa: '+String(e?.message||e);render();return;
+  }
+  S.busy=false;
+  RT.timeout(()=>{
+    if(!RT.alive()||S.resumePending?.id!==g.id)return;
+    // Timeout is NOT proof of Send failure: retain the persisted gate, do
+    // not replay and require fresh reconciliation of the uncertain outcome.
+    S.resumePending=null;
+    S.msg='Resume chưa có receipt sau thời hạn; gate giữ khóa, không tự gửi lại.';
+    enforce();
+  },50000);
+}
+RT.listen(window,'ghostplus-core-send-confirmed',e=>{
+  const p=S.resumePending,g=S.gate||gate();
+  const d=e?.detail||{};
+  if(!p||!g||g.id!==p.id||key()!==p.chatKey||d.reason!=='initial task')return;
+  const id=g.id;
+  if(g.h)saveAck(key(),g.h);
+  clear(false);
+  S.msg=`Resume ${id}: Core đã xác nhận Send receipt.`;
+  emit({id:`resumed:${id}`,type:'GATE_RESUMED',severity:'info',group:'operator',
+    title:'Ghost+ resumed with confirmed receipt',text:id,episodeId:id,desktop:false});
+});
+function evaluate(){const k=key();if(k!==S.key){if(S.titleLastRendered)restoreTabTitle();S.key=k;S.gate=gate(k);S.last='';resetTabTitleKey()}if(S.gate){if(S.resumePending?.id===S.gate.id){render();return}if(clearLegacyOperationalGate())return;if(clearV01513FalseTriageGate())return;if(autoReconcileTransientGate())return;enforce();return}if(q('#ghostplus-context-boundary-state')){lock('CONTEXT_BOUNDARY',{reason:'Context limit reached; manual handoff to a new chat is required.'});return}if(modelBusy()){render();return}const t=latest(),h=hash(t);if(t&&h!==S.last){S.last=h;const [ty,model]=term(t);if(ty==='human'&&ack(k)!==h)lock('HUMAN_REQUIRED',{h,reason:reason(t)});else if(ty==='relay'&&ack(k)!==h)lock('MODEL_RELAY',{h,reason:reason(t),model})}if(S.gate)enforce();else{if(S.titleLastRendered)restoreTabTitle();render()}}
+RT.listen(document,'click',e=>{const b=e.target instanceof Element?e.target.closest('#gitl9 [data-a="play"]'):null,g=S.gate||gate();if(!b||!g||S.resumePending?.id===g.id)return;e.preventDefault();e.stopImmediatePropagation();S.msg=`Play bị khóa bởi ${g.type} · ${g.id}.`;render()},true);
 RT.interval(evaluate,600);
 RT.cleanup(()=>{S.busy=false;document.documentElement.removeAttribute('data-ghostplus-gate');restoreTabTitle()});
 window.__ghostPlusSupervisor={version:'0.15',gate:()=>S.gate||gate(),isLocked:()=>!!(S.gate||gate()),canAutoAct:()=>!(S.gate||gate()),lock,emitAlert:emit,chatKey:key};

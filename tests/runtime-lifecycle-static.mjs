@@ -100,7 +100,10 @@ for(const file of modules){
   assert.match(src,/window\.__ghostPlusRuntime\?\.module\(/,`${file}: missing runtime scope`);
   for(const [re,label] of forbidden)assert.doesNotMatch(src,re,`${file}: forbidden ${label}`);
 }
-assert.match(read('ghost-plus-turn-budget-v2.js'),/RT\.patch\(HTMLButtonElement\.prototype,'click',wrapped\)/);
+assert.doesNotMatch(budget,/RT\.patch\(HTMLButtonElement\.prototype,'click'/,'Turn Budget must not mutate the Send button path after receipt text is frozen');
+assert.match(budget,/function prepareWirePrompt\(/,'Turn Budget must provide a pure pre-send wire decorator');
+assert.match(core,/prepareWirePrompt/,'Core must freeze the decorated wire prompt before Send');
+assert.match(core,/onSendConfirmed/,'Turn Budget must start only after a confirmed receipt');
 assert.match(read('ghost-plus-telegram.js'),/RT\.abortable\(h\)/);
 assert.match(read('ghost-plus-telegram.js'),/RT\.cleanup\(unsubscribe\)/);
 const telegram=read('ghost-plus-telegram.js');

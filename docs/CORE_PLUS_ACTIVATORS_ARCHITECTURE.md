@@ -57,7 +57,17 @@ It sends a fixed reground prompt:
 You strayed from the active control protocol. Re-read the existing conversation, reground in the current task, and continue without restarting. Follow the active protocol exactly. Your response must end with one valid terminal control line.
 ```
 
-Retry at most a small fixed number of times (default: 2). After repeated failure, stop for the human.
+Recovery is bounded: the first completed assistant turn missing a marker may get one
+reground. If the next completed turn is still missing the terminal, enter
+`PROTOCOL_WAIT` and **do not** invent `HUMAN_REQUIRED`. While waiting, Ghost
+monitors for a newly submitted manual user turn and adopts it without sending
+another prompt. The operator may explicitly start a new Play cycle after
+reviewing the state.
+
+An actual `[[GITL::HUMAN]]`, authentication failure, unverified side effect,
+context boundary, or unknown Send outcome remains a hard safety gate. Stop,
+BUSY, progress text, and a different user turn are not proofs that an uncertain
+Send succeeded.
 
 No roadmap reconstruction. No semantic diagnosis. No controller-side planning.
 

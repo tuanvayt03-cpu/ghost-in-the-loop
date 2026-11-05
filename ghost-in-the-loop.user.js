@@ -32,7 +32,7 @@ const CHATGPT_SEND_WAIT_MS = 10000;
 const CHATGPT_HOST_CONTROL_WAIT_MS = 8000;
 const SEND_CONFIRM_MS = 16000;
 const CHATGPT_SEND_CONFIRM_MS = 45000;
-const CONTINUITY_KEY = 'ghostplus.continuityLeaseStartedAt';
+const CONTINUITY_KEY = 'ghostplus.continuityLeaseStartedAt.v2:';
 
 const G = Object.freeze({
   proceed: '[[GITL::PROCEED]]',
@@ -90,8 +90,9 @@ const HOST = PROFILES.find(p => p.host.test(location.hostname)) || PROFILES[2];
 const S = {
   mode: 'IDLE', detail: 'Ready', round: 0,
   max: Math.max(1, Math.min(100, Number(GM_getValue('v9.max', 25)) || 25)),
-  sending: false, uncertain: false, lastHandled: '', awaitingFrom: '', stableHash: '', stableSince: 0,
+  sending: false, uncertain: false, lastHandled: '', lastHandledAssistantCount: 0, awaitingFrom: '', stableHash: '', stableSince: 0,
   drift: 0, bootstrapped: false, relay: '', timer: null,
+  protocolWaitUsers: 0, protocolWaitAssistant: '', awaitingAssistantCount: 0,
   tab: String(GM_getValue('v9.tab', 'play') || 'play'), events: [], lastError: null
 };
 const ON = {};
@@ -103,8 +104,9 @@ try { if (window.trustedTypes?.createPolicy) _ttPolicy = window.trustedTypes.cre
 const trustedHTML = s => _ttPolicy ? _ttPolicy.createHTML(s) : s;
 const sleep = ms => RT.sleep(ms);
 const now = () => Date.now();
-function armContinuity(){try{GM_setValue(CONTINUITY_KEY,now())}catch(_){}}
-function clearContinuity(){try{GM_setValue(CONTINUITY_KEY,0)}catch(_){}}
+function continuityScope(){return CONTINUITY_KEY+location.host+location.pathname}
+function armContinuity(){try{sessionStorage.setItem(continuityScope(),String(now()))}catch(_){}}
+function clearContinuity(){try{sessionStorage.setItem(continuityScope(),'0')}catch(_){}}
 const displayText = value => String(value ?? '').replace(/\u00a0/g, ' ').replace(/\r/g, '').trim();
 const semanticText = value => displayText(value).replace(/\s+/g, ' ').trim();
 function captureExternalSelection(el) {
@@ -173,6 +175,13 @@ function assistantText() {
   const nodes = queryAll(HOST.assistant).filter(el => el.isConnected && nodeText(el));
   return nodes.length ? nodeText(nodes[nodes.length - 1]) : '';
 }
+function assistantCount(){
+  if(HOST.id==='chatgpt'){
+    const turns=window.__ghostPlusRuntime?.dom?.chatgptTurns?.();
+    if(Array.isArray(turns))return turns.filter(t=>t.role==='assistant').length;
+  }
+  return queryAll(HOST.assistant).filter(el=>el.isConnected).length;
+}
 function userCount() {
   if (HOST.id === 'chatgpt') {
     const shared=window.__ghostPlusRuntime?.dom?.chatgptUserCount;
@@ -218,6 +227,83 @@ function hash(value) {
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
   return `${s.length}:${(h >>> 0).toString(16)}`;
 }
+// Durable, per-conversation Send ledger. Persist only fingerprints and turn
+// counters, never the prompt itself. ATTEMPTED is saved before .click() so a
+// reload between actuation and receipt cannot silently replay a user turn.
+const TXN_PREFIX='ghostplus.sendTxn.v1:';
+const TXN_ALIAS='ghostplus.pendingSendTxnKey';
+function sendFingerprint(value){
+  const s=String(value??'').replace(/\u00a0/g,' ').replace(/[\u200B-\u200D\uFEFF]/g,'').replace(/\s+/g,'');
+  let a=2166136261,b=5381;
+  for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);a=Math.imul(a^c,16777619);b=(Math.imul(b,33)^c)>>>0}
+  return `${s.length}:${(a>>>0).toString(16)}:${(b>>>0).toString(16)}`;
+}
+function sendJournalKey(){return TXN_PREFIX+location.host+location.pathname}
+function readJournal(key=sendJournalKey()){
+  try{
+    const value=GM_getValue(key,'');
+    const obj=typeof value==='string'?JSON.parse(value||'null'):value;
+    return obj&&typeof obj==='object'&&obj.key===key?obj:null;
+  }catch(_){return null}
+}
+function writeJournal(journal){
+  if(!journal?.key)return false;
+  try{
+    GM_setValue(journal.key,JSON.stringify(journal));
+    if(JSON.stringify(readJournal(journal.key))!==JSON.stringify(journal))return false;
+    // First Send of a new ChatGPT conversation may move '/' to '/c/<id>'.
+    // Materialize the confirmed journal at its canonical chat URL before
+    // dropping the original tab-scoped in-flight alias.
+    if(journal.stage==='CONFIRMED'&&journal.chatPath==='/'&&
+       /^\/c\/[a-z0-9-]+\/?$/i.test(location.pathname)){
+      const moved={...journal,key:sendJournalKey(),chatPath:location.pathname};
+      GM_setValue(moved.key,JSON.stringify(moved));
+      if(JSON.stringify(readJournal(moved.key))!==JSON.stringify(moved))return false;
+    }
+    if(journal.stage==='ATTEMPTED'||journal.stage==='UNKNOWN'){
+      sessionStorage.setItem(TXN_ALIAS,journal.key);
+    }else if(sessionStorage.getItem(TXN_ALIAS)===journal.key){
+      sessionStorage.removeItem(TXN_ALIAS);
+    }
+    return true;
+  }catch(_){return false}
+}
+function journalAppliesHere(j){
+  if(!j)return false;
+  if(j.chatPath===location.pathname)return true;
+  // ChatGPT promotes a new conversation from '/' into '/c/<id>' during Send.
+  // Preserve its in-flight journal across that single navigation boundary.
+  return j.chatPath==='/'&&/^\/c\/[a-z0-9-]+\/?$/i.test(location.pathname);
+}
+function activeJournal(){
+  let alias='';
+  try{alias=sessionStorage.getItem(TXN_ALIAS)||''}catch(_){}
+  const prior=alias?readJournal(alias):null;
+  if(prior&&['ATTEMPTED','UNKNOWN'].includes(prior.stage)){
+    if(journalAppliesHere(prior))return prior;
+    // A pending Send in chat A must not commandeer chat B in the same tab.
+    return readJournal();
+  }
+  if(alias)try{sessionStorage.removeItem(TXN_ALIAS)}catch(_){}
+  return readJournal();
+}
+function pendingJournal(){
+  const j=activeJournal();
+  return j&&['ATTEMPTED','UNKNOWN'].includes(j.stage)?j:null;
+}
+function reconcileJournal(){
+  const j=pendingJournal();
+  if(!j)return true;
+  if(!journalAppliesHere(j))return false;
+  const snap=window.__ghostPlusRuntime?.dom?.chatgptUserSnapshot?.();
+  if(!snap||snap.count<=j.beforeUsers||sendFingerprint(snap.latestText)!==j.expectedSig)return false;
+  return writeJournal({...j,stage:'CONFIRMED',lateReconciled:true,confirmedAt:now(),receipt:'matching-new-user-turn'});
+}
+window.__ghostCoreSendJournal=Object.freeze({hasUnresolved:()=>!!pendingJournal(),reconcile:reconcileJournal,
+  snapshot:()=>{const j=pendingJournal();return j?{stage:j.stage,origin:j.origin,startedAt:j.startedAt,chatPath:j.chatPath}:null},
+  latest:()=>{const j=activeJournal();return j?{stage:j.stage,origin:j.origin,startedAt:j.startedAt,confirmedAt:j.confirmedAt||0,
+    lateReconciled:!!j.lateReconciled,beforeAssistants:j.beforeAssistants||0,
+    intentId:j.intentId||'',chatPath:j.chatPath}:null}});
 function finalLine(text) {
   const lines = String(text || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
   return lines.length ? lines[lines.length - 1] : '';
@@ -424,18 +510,41 @@ async function confirmSend(beforeUsers, beforeComposer, beforeAssistantHash, exp
 
 async function sendOnce(text, reason) {
   if (!RT.alive() || S.mode !== 'RUNNING' || S.sending || S.uncertain) return false;
+  if(HOST.id==='chatgpt'&&pendingJournal()){
+    S.uncertain=true;pause('Unresolved prior Send journal; reconcile its receipt before any new Send.');
+    return false;
+  }
+  // Compose exactly once *before* staging, actuation and receipt verification.
+  // Optional modules may contribute a pure transport decoration, never a
+  // late composer/button-click mutation.
+  const prepared=window.__ghostPlusTurnBudget?.prepareWirePrompt?.(text);
+  if(prepared!==undefined){
+    if(typeof prepared!=='string'||!prepared.trim())return false;
+    text=prepared;
+  }
   S.sending = true; S.detail = `Staging ${reason}...`; render();
   const beforeUsers = userCount();
   const beforeUserSnapshot=HOST.id==='chatgpt'
     ?window.__ghostPlusRuntime?.dom?.chatgptUserSnapshot?.():null;
-  const beforeAssistantHash = hash(assistantText());
+  const beforeAssistantHash=hash(assistantText());
+  const beforeAssistantCount=assistantCount();
   const staged = await setComposerText(text);
   if(!RT.alive())return false;
+  if(S.mode!=='RUNNING'||!S.sending){
+    await window.__ghostPlusRuntime?.dom?.clearComposerIfExact?.(text,RT,{verifyMs:1200});
+    log('send-cancelled-before-actuation',{reason,phase:'staging'});
+    return false;
+  }
   if (!staged.ok) {
     S.sending = false; fail('PLAY-WRITE', `Could not reliably stage the prompt (${staged.why}).`, staged); return false;
   }
   const sendReady = await waitForSendButton(staged.el,text);
   if(!RT.alive())return false;
+  if(S.mode!=='RUNNING'||!S.sending){
+    await window.__ghostPlusRuntime?.dom?.clearComposerIfExact?.(text,RT,{verifyMs:1200});
+    log('send-cancelled-before-actuation',{reason,phase:'send-ready'});
+    return false;
+  }
   if (!sendReady?.ok || !sendReady.el) {
     S.sending = false;
     if(HOST.id==='chatgpt'&&hostBusy(sendReady)){
@@ -454,12 +563,30 @@ async function sendOnce(text, reason) {
     return false;
   }
   const beforeComposer = semanticText(nodeText(composer()));
+  let sendTxn=null;
+  if(HOST.id==='chatgpt'){
+    if(!beforeUserSnapshot||!Number.isFinite(beforeUserSnapshot.count)){
+      S.sending=false;fail('PLAY-RECEIPT-BASELINE','No reliable user-turn baseline. Refusing Send.');
+      return false;
+    }
+    sendTxn={key:sendJournalKey(),chatPath:location.pathname,startedPath:location.pathname,
+      stage:'ATTEMPTED',origin:reason,expectedSig:sendFingerprint(text),
+      beforeUsers:beforeUserSnapshot.count,beforeUserSig:sendFingerprint(beforeUserSnapshot.latestText),
+      beforeAssistants:beforeAssistantCount,
+      intentId:text.match(/\[GHOST-RECOVERY-ID:([A-Za-z0-9_-]{6,80})\]/)?.[1]||'',startedAt:now()};
+    if(!writeJournal(sendTxn)){
+      S.sending=false;S.uncertain=true;
+      fail('PLAY-JOURNAL','Cannot persist the at-most-once Send journal; no click attempted.');
+      return false;
+    }
+  }
   log('send-click', { reason, round: S.round + 1, host: HOST.id });
   if(HOST.id==='chatgpt'&&window.__ghostPlusRuntime?.dom?.actuateChatgptSend){
     const actuation=window.__ghostPlusRuntime.dom.actuateChatgptSend(text);
     if(!actuation?.ok){
       S.sending=false;
       if(!actuation?.attempted&&(actuation?.mode==='stop'||actuation?.mode==='busy'||actuation?.why==='generation-active')){
+        if(sendTxn)writeJournal({...sendTxn,stage:'ABORTED'});
         const cleared=await window.__ghostPlusRuntime?.dom?.clearComposerIfExact?.(text,RT,{verifyMs:1200});
         S.detail='ChatGPT became BUSY before actuation · adopted active turn without sending';
         log('send-skipped-host-busy',{reason,mode:String(actuation?.mode||''),why:String(actuation?.why||''),cleared:!!cleared?.ok});
@@ -467,9 +594,11 @@ async function sendOnce(text, reason) {
         return true;
       }
       if(actuation?.attempted){
+        if(sendTxn)writeJournal({...sendTxn,stage:'UNKNOWN',uncertainAt:now()});
         S.uncertain=true;
         fail('PLAY-SEND-THREW','Send actuation threw or became uncertain. Ghost stopped to prevent a duplicate.',{why:String(actuation?.why||''),message:String(actuation?.error||'')});
       }else{
+        if(sendTxn)writeJournal({...sendTxn,stage:'ABORTED'});
         fail('PLAY-SEND',`Prompt is still staged, but Send became unsafe before actuation (${actuation?.why||'unknown'}).`,{host:HOST.id,mode:String(actuation?.mode||'')});
       }
       return false;
@@ -485,17 +614,29 @@ async function sendOnce(text, reason) {
   if(!RT.alive())return false;
   S.sending = false;
   if (!confirmed.ok) {
+    if(sendTxn)writeJournal({...sendTxn,stage:'UNKNOWN',uncertainAt:now()});
     S.uncertain = true; fail('PLAY-SEND-UNCERTAIN', 'Send was attempted but host acceptance could not be confirmed. Ghost will not resend.'); return false;
   }
-  S.round += 1; S.awaitingFrom = beforeAssistantHash; S.stableHash = ''; S.stableSince = 0;
+  if(sendTxn&&!writeJournal({...sendTxn,stage:'CONFIRMED',confirmedAt:now(),receipt:confirmed.why})){
+    S.uncertain=true;fail('PLAY-JOURNAL','Receipt was observed but durable confirmation could not be stored. No further Send.');
+    return false;
+  }
+  S.round += 1; S.awaitingFrom=beforeAssistantHash;
+  S.awaitingAssistantCount=beforeAssistantCount;
+  S.stableHash=''; S.stableSince=0;
   armContinuity();
+  try{window.__ghostPlusTurnBudget?.onSendConfirmed?.(text)}catch(_){}
+  try{window.dispatchEvent(new CustomEvent('ghostplus-core-send-confirmed',{
+    detail:{reason,round:S.round,chatPath:location.pathname,receipt:confirmed.why}
+  }))}catch(_){}
   S.detail = `Sent once · ${confirmed.why}`; log('send-confirmed', { round: S.round, why: confirmed.why }); render(); return true;
 }
 
 async function handleTerminal(text, parsed) {
   const fp = hash(text);
-  if (!text || fp === S.lastHandled || S.mode !== 'RUNNING' || S.sending) return;
-  S.lastHandled = fp;
+  const count=assistantCount();
+  if (!text || (fp === S.lastHandled&&count===S.lastHandledAssistantCount) || S.mode !== 'RUNNING' || S.sending) return;
+  S.lastHandled = fp;S.lastHandledAssistantCount=count;
   if(parsed.triage)log('timeout-triage',{status:parsed.triage.status,sideEffectUnverified:parsed.triage.sideEffectUnverified,mismatch:!!parsed.triageMismatch,derived:!!parsed.triageDerived});
   if (parsed.type === 'halt') {
     S.drift = 0; clearContinuity(); complete('Task complete');
@@ -538,9 +679,31 @@ async function handleDrift(tail) {
   S.drift += 1; log('protocol-drift', { count: S.drift, tail: String(tail || '').slice(0, 80) });
   if (S.drift === 1) { await sendOnce(regroundPrompt(), 'protocol reground'); return; }
   if (S.drift === 2 && ON.cleanerz) { await sendOnce(cleanerzPrompt(), 'Cleanerz recovery'); return; }
-  humanBlock(`Protocol drift repeated ${S.drift} times. Human review required.`);
+  // A missing protocol marker is a controller contract fault, not evidence
+  // that an operator decision or an uncertain external side effect exists.
+  // Keep observing for an independently submitted manual user turn; never
+  // turn this bounded soft recovery into a synthetic HUMAN_REQUIRED gate.
+  S.mode='PROTOCOL_WAIT';
+  S.protocolWaitUsers=userCount();
+  S.protocolWaitAssistant=hash(assistantText());
+  S.detail='Protocol marker missing after bounded recovery · waiting for a new user turn (no automatic Send)';
+  clearContinuity();
+  log('protocol-soft-wait',{drift:S.drift,baselineUsers:S.protocolWaitUsers});
+  render();
 }
 async function tick() {
+  if(S.mode==='PROTOCOL_WAIT'){
+    const users=userCount();
+    if(users>S.protocolWaitUsers){
+      const previous=hash(assistantText());
+      S.mode='RUNNING';S.detail='Adopted manual user turn after protocol wait · monitoring without Send';
+      S.awaitingFrom=previous;S.awaitingAssistantCount=assistantCount();
+      S.protocolWaitUsers=users;S.stableHash='';S.stableSince=0;S.drift=0;
+      S.lastHandled='';S.lastHandledAssistantCount=0;
+      armContinuity();log('protocol-manual-adopt',{users});render();
+    }
+    return;
+  }
   if (S.mode !== 'RUNNING' || S.sending || S.uncertain) return;
   if (generating()) {
     const changed = S.detail !== 'Model working...';
@@ -552,8 +715,11 @@ async function tick() {
   if (!text) { S.detail = 'Waiting for assistant output...'; render(); return; }
   const fp = hash(text);
   if (S.awaitingFrom) {
-    if (fp === S.awaitingFrom) { S.detail = 'Waiting for the next answer...'; render(); return; }
-    S.awaitingFrom = ''; S.stableHash = ''; S.stableSince = 0;
+    const count=assistantCount();
+    if(fp===S.awaitingFrom&&count<=S.awaitingAssistantCount){
+      S.detail='Waiting for the next answer...';render();return;
+    }
+    S.awaitingFrom='';S.awaitingAssistantCount=0;S.stableHash='';S.stableSince=0;
   }
   if (fp !== S.stableHash) {
     S.stableHash = fp; S.stableSince = now(); S.detail = 'Output changed · waiting for stability'; render(); return;
@@ -566,11 +732,18 @@ async function tick() {
     return;
   }
   S.detail = quiet < DRIFT_QUIET_MS ? 'Output quiet · waiting for terminal' : 'Terminal missing · regrounding'; render();
-  if (quiet >= DRIFT_QUIET_MS) { S.lastHandled = fp; await handleDrift(parsed.raw); }
+  if (quiet >= DRIFT_QUIET_MS) { S.lastHandled=fp;S.lastHandledAssistantCount=assistantCount(); await handleDrift(parsed.raw); }
 }
 
 async function play() {
   if (S.mode === 'RUNNING') return;
+  const unverified=HOST.id==='chatgpt'?pendingJournal():null;
+  if(unverified&&!reconcileJournal()){
+    S.uncertain=true;S.mode='PAUSED';
+    S.detail='Prior Send outcome remains unverified after reload; no replay or automatic recovery Send.';
+    render();return;
+  }
+  if(HOST.id==='chatgpt'&&!pendingJournal())S.uncertain=false;
   if (S.uncertain) { S.detail = 'Prior Send is uncertain. Inspect the chat or use Page Reload before resuming.'; render(); return; }
   const input = composer();
   if (!input) { fail('PLAY-INPUT', 'Current chat composer was not found.', { host: HOST.id }); return; }
@@ -595,7 +768,7 @@ async function play() {
     return;
   }
 
-  S.mode = 'RUNNING'; S.detail = 'Starting...'; S.lastHandled = ''; S.stableHash = ''; S.stableSince = 0; S.drift = 0; S.relay = ''; render();
+  S.mode = 'RUNNING'; S.detail = 'Starting...'; S.lastHandled = '';S.lastHandledAssistantCount=0; S.stableHash = ''; S.stableSince = 0; S.drift = 0; S.relay = '';render();
   const draft = nodeText(input); const latest = assistantText(); const parsed = terminal(latest);
   if (adoptActive || generating()) {
     S.bootstrapped = true;
@@ -605,6 +778,12 @@ async function play() {
     render();
   } else if (draft.trim()) {
     S.bootstrapped = true; if (!await sendOnce(bootstrapPrompt(draft), 'initial task')) return;
+  } else if(HOST.id==='chatgpt' && (window.__ghostPlusRuntime?.dom?.chatgptTurns?.()||[]).at(-1)?.role==='user'){
+    // A human may already have sent the next instruction while Ghost was
+    // stopped. Never parse/replay an older assistant marker as this turn.
+    S.bootstrapped=true;S.awaitingFrom=hash(latest);S.awaitingAssistantCount=assistantCount();
+    S.detail='Adopted latest manual user turn · waiting for assistant without Send';
+    armContinuity();render();
   } else if (!latest) {
     const seenUsers=userCount();
     const existingChat=HOST.id==='chatgpt'&&/^\/c\/[a-z0-9-]{8,}(?:\/|$)/i.test(location.pathname);
@@ -638,7 +817,7 @@ async function play() {
 function pause(detail) { S.mode = 'PAUSED'; S.detail = detail; RT.clearInterval(S.timer); S.timer = null; render(); }
 function stop() {
   clearContinuity();
-  S.mode = 'IDLE'; S.detail = 'Stopped'; S.sending = false; S.uncertain = false; S.lastHandled = ''; S.awaitingFrom = ''; S.stableHash = ''; S.stableSince = 0; S.drift = 0;
+  S.mode = 'IDLE'; S.detail = 'Stopped'; S.sending = false; S.uncertain = false; S.lastHandled = '';S.lastHandledAssistantCount=0; S.awaitingFrom = '';S.awaitingAssistantCount=0;S.stableHash = ''; S.stableSince = 0; S.drift = 0; S.protocolWaitUsers=0;
   RT.clearInterval(S.timer); S.timer = null; log('stop'); render();
 }
 function complete(detail) { clearContinuity(); S.mode = 'COMPLETE'; S.detail = detail; RT.clearInterval(S.timer); S.timer = null; render(); }

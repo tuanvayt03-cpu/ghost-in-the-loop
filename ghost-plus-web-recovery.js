@@ -85,6 +85,10 @@ function notice(title, text) {
   try { GM_notification?.({ title, text, timeout: 9000 }); } catch (_) {}
 }
 function ghostStatus() { return norm(q('#gitl9 .status')?.innerText || ''); }
+function coreRound(){
+  const m=ghostStatus().match(/\bround\s+(\d+)\s*\//i);
+  return m?Number(m[1]):-1;
+}
 function ghostPaused() { return /^PAUSED\b/i.test(ghostStatus()); }
 function ghostUncertain() { return /PLAY-SEND-(UNCERTAIN|THREW)|UNCERTAIN/i.test(ghostStatus()); }
 function ghostStop() { return q('#gitl9 [data-a="stop"]'); }
@@ -268,6 +272,7 @@ function beginRecoveryAttempt(prompt,snap,beforeUsers,beforeAssistants){
     stagedAt:now(),
     beforeUsers,
     beforeAssistants,
+    beforeCoreRound:coreRound(),
     beforeUserSnapshot:window.__ghostPlusRuntime?.dom?.chatgptUserSnapshot?.()||null,
     beforeUserHash:hash(latestText(users())),
     beforeAssistantHash:hash(latestText(assistants()))
@@ -277,9 +282,19 @@ function beginRecoveryAttempt(prompt,snap,beforeUsers,beforeAssistants){
 }
 function recoveryAcceptanceObserved(attempt=S.recoveryAttempt){
   if(!attempt)return'';
+  // The core owns ChatGPT Send and increments its round only after its own
+  // independent matching-user-turn receipt succeeds. Web Recovery stages the
+  // raw probe, while core wraps that draft with the active Ghost contract
+  // before Send, so the raw staged text is not necessarily the wire text.
+  // Prefer the core-confirmed transaction boundary instead of duplicating its
+  // receipt semantics here.
+  const round=coreRound();
+  if(Number.isFinite(attempt.beforeCoreRound)&&attempt.beforeCoreRound>=0&&round>attempt.beforeCoreRound){
+    return'core-send-confirmed';
+  }
   const receipt=window.__ghostPlusRuntime?.dom?.chatgptSubmissionObserved;
-  // Only an exact matching user message can acknowledge this recovery
-  // probe. An unrelated/manual user message is progress, not our receipt.
+  // Keep the exact raw-message path as a conservative fallback for any future
+  // direct-send implementation that does not bootstrap the staged draft.
   if(receipt?.(attempt.beforeUserSnapshot,attempt.prompt))return'matching-user-turn';
   return'';
 }
@@ -548,8 +563,8 @@ async function sendRecoveryProbe(snap) {
   S.recovering = true; renderWebState(snap, 'Đang chuẩn bị status probe mới; không retry request cũ.');
 
   // Clear Ghost's internal UNCERTAIN latch only. This does NOT click ChatGPT's Stop-generating control.
-  const gs = ghostStop(), gp = ghostPlay();
-  if (!visible(gs) || !visible(gp)) {
+  const gs = ghostStop();
+  if (!visible(gs) || !visible(ghostPlay())) {
     requireHuman(snap,'Không tìm thấy nút điều khiển Ghost đáng tin cậy để reconcile uncertain state.');
     return;
   }
@@ -583,9 +598,19 @@ async function sendRecoveryProbe(snap) {
       :'Send control không trở thành READY sau khi stage recovery probe; hủy probe an toàn.');
     return;
   }
-  try { gp.click(); } catch (e) {
-    S.recoveryAttempt=null;
-    requireHuman(snap,'Không khởi động được Ghost recovery: '+String(e?.message||e));
+  // Stop() re-renders the Ghost panel. Re-acquire Play only after the
+  // managed probe is staged and the final host Send control is confirmed.
+  const livePlay=ghostPlay();
+  if(!visible(livePlay)){
+    await window.__ghostPlusRuntime?.dom?.clearComposerIfExact?.(prompt,RT,{verifyMs:1200});
+    S.recoveryAttempt=null;S.recovering=false;
+    renderWebState(snap,'Ghost Play vừa được render lại nhưng chưa khả dụng; đã hủy probe an toàn và tiếp tục theo dõi.');
+    return;
+  }
+  try { livePlay.click(); } catch (e) {
+    await window.__ghostPlusRuntime?.dom?.clearComposerIfExact?.(prompt,RT,{verifyMs:1200});
+    S.recoveryAttempt=null;S.recovering=false;
+    renderWebState(snap,'Không khởi động được Ghost recovery trước Send; đã hủy probe an toàn: '+String(e?.message||e));
     return;
   }
 

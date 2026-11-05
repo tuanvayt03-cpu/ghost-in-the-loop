@@ -60,7 +60,8 @@ test('Stop/BUSY alone cannot clear a transient uncertain-send gate',async({page}
   await expect(page.locator('#ghostplus-gate')).toBeVisible();
   await page.waitForTimeout(1100);
   expect(await page.evaluate(()=>window.__ghostPlusSupervisor.isLocked())).toBe(true);
-  await expect(page.locator('#gitl9 .status')).toContainText('ChatGPT đang làm việc');
+  await expect(page.locator('#gitl9 .status')).toContainText('Controller: HARD_GATE');
+  await expect(page.locator('#gitl9 .status')).toContainText('Host: BUSY (không can thiệp)');
 });
 test('operator Resume while Stop is visible adopts the active turn and never stages/sends',async({page})=>{
   await boot(page);await lock(page);
@@ -78,7 +79,7 @@ test('operator Resume while Stop is visible adopts the active turn and never sta
   }));
   expect(state).toEqual({clicks:0,draft:'',userTurns:0});
 });
-test('a new user turn after a transient lock positively reconciles without duplicate Send',async({page})=>{
+test('unrelated manual user turn cannot clear an uncertain-send gate',async({page})=>{
   await boot(page);await lock(page);
   await page.evaluate(()=>{
     window.__clicks=0;
@@ -86,12 +87,21 @@ test('a new user turn after a transient lock positively reconciles without dupli
     const turn=document.createElement('article');
     turn.setAttribute('data-testid','conversation-turn-77');
     turn.setAttribute('aria-label','You said:');
-    turn.textContent='Manually resumed';
+    turn.textContent='Unrelated manual message';
     document.querySelector('main').insertBefore(turn,document.querySelector('form'));
   });
-  await expect.poll(()=>page.evaluate(()=>window.__ghostPlusSupervisor.isLocked()),{timeout:4000}).toBe(false);
-  await expect(page.locator('#gitl9 .status')).toContainText('RUNNING');
+  await page.waitForTimeout(850);
+  expect(await page.evaluate(()=>window.__ghostPlusSupervisor.isLocked())).toBe(true);
+  await expect(page.locator('#gitl9 .status')).toContainText('HARD_GATE');
   expect(await page.evaluate(()=>window.__clicks)).toBe(0);
+});
+test('uncertain-send gate clears only after Core confirms the same late transaction',async({page})=>{
+  await boot(page);await lock(page);
+  await page.evaluate(()=>{
+    window.__ghostCoreSendJournal={hasUnresolved:()=>false,reconcile:()=>true,
+      latest:()=>({stage:'CONFIRMED',lateReconciled:true,confirmedAt:Date.now()+1})};
+  });
+  await expect.poll(()=>page.evaluate(()=>window.__ghostPlusSupervisor.isLocked()),{timeout:4000}).toBe(false);
 });
 test('hard AUTH gate does not unlock or stage a prompt while ChatGPT is busy',async({page})=>{
   await boot(page);
@@ -100,6 +110,28 @@ test('hard AUTH gate does not unlock or stage a prompt while ChatGPT is busy',as
   expect(await page.evaluate(()=>window.__ghostPlusSupervisor.isLocked())).toBe(true);
   expect(await page.locator('#prompt-textarea').textContent()).toBe('');
 });
+
+test('Web Recovery ignores unrelated Core round and requires its own confirmed intent id',async({page})=>{
+ await boot(page,{withWeb:true,user:'Prior task',action:'send'});
+ const s=await page.evaluate(()=>{
+   const prompt='[WEB RECOVERY STATUS PROBE]\\n[GHOST-RECOVERY-ID:abc123def456]\\nCheck state';
+   const attempt=window.__webTest.beginRecoveryAttempt(prompt,{key:'a',error:{type:'NETWORK_ERROR'}},1,1);
+   const original=window.__ghostCoreSendJournal;
+   window.__ghostCoreSendJournal={latest:()=>({
+     stage:'CONFIRMED',intentId:'wrongIntent',confirmedAt:Date.now()+1
+   })};
+   document.querySelector('#gitl9 .status').textContent='RUNNING · round 9/25';
+   const unrelated=window.__webTest.recoveryAcceptanceObserved(attempt);
+   window.__ghostCoreSendJournal={latest:()=>({
+     stage:'CONFIRMED',intentId:'abc123def456',confirmedAt:Date.now()+1
+   })};
+   const exact=window.__webTest.recoveryAcceptanceObserved(attempt);
+   window.__ghostCoreSendJournal=original;
+   return {unrelated,exact};
+ });
+ expect(s).toEqual({unrelated:'',exact:'core-send-confirmed'});
+});
+
 test('recovery rejects unrelated user progress; only exact probe receipt confirms submission',async({page})=>{
   await boot(page,{withWeb:true,user:'Old request'});
   const result=await page.evaluate(()=>{

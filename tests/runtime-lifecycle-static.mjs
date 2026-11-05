@@ -81,7 +81,7 @@ assert.match(manager,/domChatGptFaultSuppressesWeakBusy/,'terminal stream faults
 assert.match(manager,/mode:'idle',busy:false/,'Resume\/delivery terminal faults without Stop must resolve fault-idle');
 assert.match(manager,/recoverable-stream-fault-idle/,'fault-idle provenance missing');
 assert.match(manager,/mode:'uncertain'/,'unresolved host controls must fail closed');
-assert.match(loader,/ghostplus\.15\.34/);
+assert.match(loader,/ghostplus\.15\.35/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
 assert.equal(requires.length,14);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);
@@ -100,7 +100,10 @@ for(const file of modules){
   assert.match(src,/window\.__ghostPlusRuntime\?\.module\(/,`${file}: missing runtime scope`);
   for(const [re,label] of forbidden)assert.doesNotMatch(src,re,`${file}: forbidden ${label}`);
 }
-assert.match(read('ghost-plus-turn-budget-v2.js'),/RT\.patch\(HTMLButtonElement\.prototype,'click',wrapped\)/);
+assert.doesNotMatch(budget,/RT\.patch\(HTMLButtonElement\.prototype,'click'/,'Turn Budget must not mutate the Send button path after receipt text is frozen');
+assert.match(budget,/function prepareWirePrompt\(/,'Turn Budget must provide a pure pre-send wire decorator');
+assert.match(core,/prepareWirePrompt/,'Core must freeze the decorated wire prompt before Send');
+assert.match(core,/onSendConfirmed/,'Turn Budget must start only after a confirmed receipt');
 assert.match(read('ghost-plus-telegram.js'),/RT\.abortable\(h\)/);
 assert.match(read('ghost-plus-telegram.js'),/RT\.cleanup\(unsubscribe\)/);
 const telegram=read('ghost-plus-telegram.js');
@@ -223,15 +226,17 @@ assert.match(webRecovery,/Không nâng HUMAN và không resend thêm/,'verified 
 assert.match(webRecovery,/Outcome thật sự uncertain; cần kiểm tra thủ công\./,'uncertain evidence must still escalate to HUMAN');
 
 const gateRuntime=read('ghost-plus-operator-gate.js');
-assert.match(gateRuntime,/transient!=='WEB_SEND_UNCERTAIN'/,'transient WEB_SEND_UNCERTAIN gate must auto-reconcile only for the intended provenance');
-assert.match(gateRuntime,/const userAdvanced=bu!==null&&users\(\)>bu/,'late user-turn evidence missing');
-assert.match(gateRuntime,/const assistantAdvanced=ba!==null&&assistants\(\)>ba/,'late assistant-turn evidence missing');
-assert.match(gateRuntime,/const busy=modelBusy\(\)/,'late generation evidence missing');
+assert.match(gateRuntime,/g\.transient==='WEB_SEND_UNCERTAIN'&&g\.autoReconcile/,'only named WEB_SEND_UNCERTAIN gates may be auto-reconciled');
+assert.match(gateRuntime,/core\.reconcile\?\.\(\)/,'uncertain gate must reconcile Core journal before clearing');
+assert.match(gateRuntime,/txn\.stage!=='CONFIRMED'/,'uncertain gate must require Core-confirmed receipt');
+assert.match(gateRuntime,/txn\.lateReconciled!==true/,'uncertain gate must reject unrelated progress');
+assert.match(gateRuntime,/txn\.confirmedAt<g\.since/,'uncertain gate receipt must postdate the gate');
+assert.match(gateRuntime,/const id=g\.id,busy=modelBusy\(\)/,'busy late-accept must monitor without Send');
 assert.match(gateRuntime,/chatgptHostControlState/,'Operator Gate must share the Stop\/Send host-control decision');
 assert.match(gateRuntime,/mode==='send'\|\|host\?\.mode==='idle'/,'Operator Gate must let explicit fault-idle override stale Watchdog BUSY text');
 assert.match(gateRuntime,/GATE_AUTO_RECONCILED/,'transient gate auto-clear event missing');
 assert.match(gateRuntime,/if\(busy\)\{/,'busy late-accept must adopt active turn');
-assert.match(gateRuntime,/if\(!userAdvanced&&!assistantAdvanced&&!assistantTextAdvanced\)return false/,'BUSY alone must not auto-clear transient gate');
+assert.match(gateRuntime,/if\(!txn\|\|txn\.stage!=='CONFIRMED'\|\|txn\.lateReconciled!==true/,'BUSY or new user turn alone must not clear uncertain gate');
 assert.match(gateRuntime,/transient==='WEB_SEND_UNCERTAIN'/,'manual Resume while generating must adopt only');
 assert.doesNotMatch(gateRuntime,/transient:'WEB_SEND_UNCERTAIN'.*\[\[GITL::HUMAN\]\]/s,'assistant HUMAN must remain hard');
 assert.match(webRecovery,/transient:'WEB_SEND_UNCERTAIN'/,'web recovery uncertainty must mark transient gate provenance');

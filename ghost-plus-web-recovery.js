@@ -85,10 +85,6 @@ function notice(title, text) {
   try { GM_notification?.({ title, text, timeout: 9000 }); } catch (_) {}
 }
 function ghostStatus() { return norm(q('#gitl9 .status')?.innerText || ''); }
-function coreRound(){
-  const m=ghostStatus().match(/\bround\s+(\d+)\s*\//i);
-  return m?Number(m[1]):-1;
-}
 function ghostPaused() { return /^PAUSED\b/i.test(ghostStatus()); }
 function ghostUncertain() { return /PLAY-SEND-(UNCERTAIN|THREW)|UNCERTAIN/i.test(ghostStatus()); }
 function ghostStop() { return q('#gitl9 [data-a="stop"]'); }
@@ -272,7 +268,7 @@ function beginRecoveryAttempt(prompt,snap,beforeUsers,beforeAssistants){
     stagedAt:now(),
     beforeUsers,
     beforeAssistants,
-    beforeCoreRound:coreRound(),
+    intentId:String(prompt||'').match(/\[GHOST-RECOVERY-ID:([A-Za-z0-9_-]{6,80})\]/)?.[1]||'',
     beforeUserSnapshot:window.__ghostPlusRuntime?.dom?.chatgptUserSnapshot?.()||null,
     beforeUserHash:hash(latestText(users())),
     beforeAssistantHash:hash(latestText(assistants()))
@@ -282,14 +278,11 @@ function beginRecoveryAttempt(prompt,snap,beforeUsers,beforeAssistants){
 }
 function recoveryAcceptanceObserved(attempt=S.recoveryAttempt){
   if(!attempt)return'';
-  // The core owns ChatGPT Send and increments its round only after its own
-  // independent matching-user-turn receipt succeeds. Web Recovery stages the
-  // raw probe, while core wraps that draft with the active Ghost contract
-  // before Send, so the raw staged text is not necessarily the wire text.
-  // Prefer the core-confirmed transaction boundary instead of duplicating its
-  // receipt semantics here.
-  const round=coreRound();
-  if(Number.isFinite(attempt.beforeCoreRound)&&attempt.beforeCoreRound>=0&&round>attempt.beforeCoreRound){
+  // Core confirms the precise on-wire prompt. Only the matching recovery
+  // intent may acknowledge this probe. A UI round counter is not a receipt.
+  const txn=window.__ghostCoreSendJournal?.latest?.();
+  if(attempt.intentId&&txn?.stage==='CONFIRMED'&&txn.intentId===attempt.intentId
+     &&Number(txn.confirmedAt)>=attempt.stagedAt){
     return'core-send-confirmed';
   }
   const receipt=window.__ghostPlusRuntime?.dom?.chatgptSubmissionObserved;
@@ -445,8 +438,10 @@ function renderWebState(snap = faultSnapshot(), text = '') {
 
 function recoveryPrompt(snap) {
   const source = snap.error.type || 'PLAY_SEND_UNCERTAIN';
+  const id=globalThis.crypto?.randomUUID?.().replace(/-/g,'')||`${Date.now().toString(36)}${Math.random().toString(36).slice(2,12)}`;
   const lines = [
     '[WEB RECOVERY STATUS PROBE]',
+    `[GHOST-RECOVERY-ID:${id}]`,
     `Lý do khôi phục: ${source}.`,
     'Lượt ChatGPT Web trước đã dừng/lỗi mà chưa có kết quả terminal đáng tin cậy.',
     'Lượt này CHỈ kiểm tra trạng thái và lập báo cáo; chưa tiếp tục công việc.',
@@ -720,6 +715,11 @@ async function sendRecoveryProbe(snap) {
 
 function sample() {
   ensureUi();
+  if(window.__ghostCoreSendJournal?.hasUnresolved?.()){
+    S.recovering=false;
+    renderWebState(faultSnapshot(),'Core Send journal chưa xác minh; Web Recovery không gửi thêm probe.');
+    return;
+  }
   const snap = faultSnapshot();
   renderWebState(snap);
 

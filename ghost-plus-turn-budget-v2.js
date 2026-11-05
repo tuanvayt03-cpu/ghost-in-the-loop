@@ -7,7 +7,7 @@ if (!/^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname)) return;
 
 const K = Object.freeze({
   minutes: 'ghostplus.turnBudgetMin',
-  startedAt: 'ghostplus.turnStartedAt'
+  startedAt: 'ghostplus.turnStartedAt.v2:'
 });
 const CFG = Object.freeze({ defaultMinutes: 20, tickMs: 1000, cleanupMs: 12000 });
 const q = (s, r=document) => r.querySelector(s);
@@ -15,6 +15,9 @@ const qa = (s, r=document) => [...r.querySelectorAll(s)];
 const norm = v => String(v || '').replace(/\s+/g, ' ').trim();
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, Number.isFinite(n) ? n : lo));
 const now = () => Date.now();
+function startedAtKey(){return K.startedAt+location.host+location.pathname}
+function getStartedAt(){try{return Number(sessionStorage.getItem(startedAtKey()))||0}catch(_){return 0}}
+function setStartedAt(value){try{sessionStorage.setItem(startedAtKey(),String(value||0))}catch(_){}}
 function captureExternalSelection(el) {
   try {
     const sel = window.getSelection?.();
@@ -145,35 +148,20 @@ function isChatGptSendButton(el){
   if(shared)return !!shared(el);
   try{return el.matches('#composer-submit-button,button[data-testid="send-button"],button[aria-label="Send prompt"],button[aria-label="Send message"],button[aria-label="Send"],button[aria-label="Submit"],button[type="submit"]');}catch(_){return false;}
 }
-function augmentBeforeProgrammaticSend(){
-  if(!budgetMinutes()) return false;
-  const el=composer();
-  const current=composerText(el);
-  if(!current || !isGhostManagedPrompt(current) || current.includes('[WEB TURN BUDGET]')) return false;
+// The Core owns the exact on-wire prompt. Never mutate the composer from
+// HTMLButtonElement.click(): that runs *after* Core has frozen its receipt
+// expectation and can turn a successful Send into PLAY-SEND-UNCERTAIN.
+function prepareWirePrompt(text){
+  const current=String(text||'');
+  if(!budgetMinutes()||!isGhostManagedPrompt(current)||current.includes('[WEB TURN BUDGET]'))return current;
   const contract=budgetContract();
-  if(!contract) return false;
-  const augmented=`${current}\n\n${contract}`;
-  if(!replaceComposerSafely(el,augmented)) return false;
-  T.injectedText=norm(augmented);
-  T.injectedAt=now();
-  T.beforeUsers=usersCount();
-  GM_setValue(K.startedAt,T.injectedAt);
-  return true;
+  return contract?`${current}\n\n${contract}`:current;
 }
-
-// Safer than v1: no direct textContent write into ChatGPT's controlled editor.
-// The original Send click is still executed exactly once.
-try{
-  const originalClick=HTMLButtonElement.prototype.click;
-  if(!originalClick.__ghostPlusBudgetV2Wrapped){
-    const wrapped=function(...args){
-      if(isChatGptSendButton(this)) augmentBeforeProgrammaticSend();
-      return originalClick.apply(this,args);
-    };
-    try{Object.defineProperty(wrapped,'__ghostPlusBudgetV2Wrapped',{value:true});}catch(_){}
-    RT.patch(HTMLButtonElement.prototype,'click',wrapped);
-  }
-}catch(_){}
+function onSendConfirmed(wirePrompt){
+  if(!String(wirePrompt||'').includes('[WEB TURN BUDGET]'))return;
+  setStartedAt(now());
+}
+window.__ghostPlusTurnBudget=Object.freeze({prepareWirePrompt,onSendConfirmed});
 
 function cleanupStaleInjectedDraft(){
   if(!T.injectedText) return;
@@ -203,16 +191,16 @@ function ensureUi(){
   row.innerHTML=`<div style="display:flex;align-items:center;justify-content:space-between;gap:6px"><span><span data-budget-dot style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#94a3b8;margin-right:4px"></span><b>Ngân sách turn</b> <span data-budget-state>chờ turn</span></span><span data-budget-elapsed>00:00</span></div><div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:4px"><select data-budget-min style="font:10px system-ui;padding:3px 4px;border:1px solid rgba(148,163,184,.42);border-radius:5px;background:#fff;color:#475569"><option value="0">Tắt</option><option value="15">15 phút</option><option value="18">18 phút</option><option value="20">20 phút</option><option value="22">22 phút</option><option value="24">24 phút</option></select><span style="color:#64748b">80% wrap · 90% checkpoint · không tự Stop</span></div>`;
   host.appendChild(row);
   const select=q('[data-budget-min]',row); select.value=String(budgetMinutes());
-  select.onchange=e=>{setBudgetMinutes(e.target.value);GM_setValue(K.startedAt,0);};
+  select.onchange=e=>{setBudgetMinutes(e.target.value);setStartedAt(0);};
   return row;
 }
 function renderUi(){
   cleanupStaleInjectedDraft();
   const row=ensureUi(); if(!row) return;
   const minutes=budgetMinutes();
-  let startedAt=Number(GM_getValue(K.startedAt,0))||0;
+  let startedAt=getStartedAt();
   if(startedAt && !ghostRunning() && !T.injectedText){
-    GM_setValue(K.startedAt,0);
+    setStartedAt(0);
     startedAt=0;
   }
   const elapsed=startedAt?Math.max(0,now()-startedAt):0;

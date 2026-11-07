@@ -12,6 +12,12 @@ const gate=load('ghost-plus-operator-gate.js');
 const telegram=load('ghost-plus-telegram.js');
 const turnBudget=load('ghost-plus-turn-budget-v2.js');
 const viSafe=load('ghost-plus-ui-vi-safe.js');
+const uncertain=load('ghost-plus-uncertain-reconcile.js');
+const coreBusy=load('ghost-plus-core-busy-gate.js');
+const context=load('ghost-plus-context-boundary.js');
+const web=load('ghost-plus-web-recovery.js');
+const help=load('ghost-plus-help.js');
+const layout=load('ghost-plus-layout-fix.js');
 const gm=`
 window.__kv={};
 window.GM_getValue=(k,v)=>Object.prototype.hasOwnProperty.call(window.__kv,k)?window.__kv[k]:v;
@@ -30,8 +36,8 @@ const html=`<!doctype html><html><body><main>
 async function boot(page){
   await page.route('https://chatgpt.com/**',route=>route.fulfill({status:200,contentType:'text/html',body:html}));
   await page.goto('https://chatgpt.com/c/i18n-fixture-20261107');
-  await page.addScriptTag({content:[gm,runtime,i18n,alerts,core,watcher,gate,turnBudget,telegram,viSafe].join('\n')});
-  await page.waitForFunction(()=>!!window.__ghostPlusI18n&&!!document.querySelector('#gitl9')&&!!document.querySelector('#ghostplus-watch'));
+  await page.addScriptTag({content:[gm,runtime,i18n,alerts,telegram,turnBudget,core,gate,uncertain,watcher,coreBusy,context,web,viSafe,help,layout].join('\n')});
+  await page.waitForFunction(()=>!!window.__ghostPlusI18n&&!!document.querySelector('#gitl9')&&!!document.querySelector('#ghostplus-watch')&&!!document.querySelector('#ghostplus-telegram'));
 }
 test('localized controls render natively, and machine status remains available separately',async({page})=>{
   await boot(page);
@@ -89,6 +95,45 @@ test('operator gate and Telegram settings show Vietnamese, without changing gate
   await expect(t.locator('[data-bind]')).toContainText('Liên kết nhóm');
   await expect(t.locator('[data-reason]')).toHaveCount(1);
   expect(await page.evaluate(()=>window.__ghostPlusSupervisor.isLocked())).toBe(true);
+});
+
+
+test('desktop and Telegram notifications use Vietnamese while retaining machine event types',async({page})=>{
+  await boot(page);
+  const result=await page.evaluate(async()=>{
+    const local=window.__ghostPlusAlerts.emit({
+      id:'vi-desktop-auth',episodeId:'AUTH-VI-001',type:'AUTH_ERROR',
+      severity:'critical',group:'hard-error',
+      title:'Ghost+ · AUTH REQUIRED',
+      text:'Authentication required',reason:'Authentication required'
+    });
+    const desktop=window.__desktop[window.__desktop.length-1];
+    window.__tgRequests=[];
+    window.GM_xmlhttpRequest=o=>{
+      window.__tgRequests.push(JSON.parse(o.data));
+      queueMicrotask(()=>o.onload({status:200,responseText:JSON.stringify({ok:true,result:{message_id:1}})}));
+      return {abort(){}};
+    };
+    GM_setValue('ghostplus.tg.token','TEST_ONLY_NOT_A_SECRET');
+    GM_setValue('ghostplus.tg.chat','999001');
+    GM_setValue('ghostplus.tg.enabled',true);
+    GM_setValue('ghostplus.tg.reason',true);
+    const event=window.__ghostPlusI18n.event({
+      id:'vi-telegram-human',episodeId:'HUM-VI-001',type:'HUMAN_REQUIRED',
+      severity:'critical',group:'operator',title:'Ghost+ · HUMAN REQUIRED',
+      text:'HUMAN REQUIRED · HUM-VI-001',reason:'Job stopped by operator.',
+      chat:'Kiểm thử'
+    });
+    await window.__ghostPlusTelegram.send(event);
+    return {local,desktop,telegram:window.__tgRequests.at(-1)};
+  });
+  expect(result.local.type).toBe('AUTH_ERROR');
+  expect(result.local.title).toContain('Cần xác thực');
+  expect(result.desktop.title).toContain('Cần xác thực');
+  expect(result.desktop.text).toContain('Cần đăng nhập');
+  expect(result.telegram.text).toContain('Cần người dùng xử lý');
+  expect(result.telegram.text).toContain('Mã tác vụ');
+  expect(result.telegram.text).toContain('Nguyên nhân: Người dùng đã dừng Ghost.');
 });
 
 test('Vietnamese control labels remain usable on a narrow viewport',async({page})=>{

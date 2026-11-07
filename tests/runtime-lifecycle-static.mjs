@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const modules=[
-  'ghost-plus-alert-router.js','ghost-plus-telegram.js','ghost-plus-turn-budget-v2.js',
+  'ghost-plus-i18n-vi.js','ghost-plus-alert-router.js','ghost-plus-telegram.js','ghost-plus-turn-budget-v2.js',
   'ghost-in-the-loop.user.js','ghost-plus-operator-gate.js','ghost-plus-uncertain-reconcile.js',
   'ghost-plus-companion-v2.js','ghost-plus-core-busy-gate.js','ghost-plus-context-boundary.js',
   'ghost-plus-web-recovery.js','ghost-plus-ui-vi-safe.js','ghost-plus-help.js','ghost-plus-layout-fix.js'
@@ -81,10 +81,29 @@ assert.match(manager,/domChatGptFaultSuppressesWeakBusy/,'terminal stream faults
 assert.match(manager,/mode:'idle',busy:false/,'Resume\/delivery terminal faults without Stop must resolve fault-idle');
 assert.match(manager,/recoverable-stream-fault-idle/,'fault-idle provenance missing');
 assert.match(manager,/mode:'uncertain'/,'unresolved host controls must fail closed');
-assert.match(loader,/ghostplus\.15\.35/);
+assert.match(loader,/ghostplus\.15\.36/);
 const requires=[...loader.matchAll(/^\/\/ @require\s+(.+)$/gm)].map(m=>m[1]);
-assert.equal(requires.length,14);
+assert.equal(requires.length,15);
 assert.match(requires[0],/ghost-plus-runtime-manager\.js$/);
+assert.match(requires[1],/ghost-plus-i18n-vi\.js$/,'i18n must load before alerts and UI');
+const runtimePin=requires[0].match(/\/([a-f0-9]{40})\/ghost-plus-runtime-manager\.js$/)?.[1];
+assert.ok(runtimePin,'runtime must be pinned to an immutable source commit');
+for(const name of [
+  'ghost-plus-i18n-vi.js','ghost-plus-alert-router.js','ghost-plus-telegram.js',
+  'ghost-plus-turn-budget-v2.js','ghost-in-the-loop.user.js','ghost-plus-operator-gate.js',
+  'ghost-plus-uncertain-reconcile.js','ghost-plus-companion-v2.js',
+  'ghost-plus-core-busy-gate.js','ghost-plus-context-boundary.js',
+  'ghost-plus-web-recovery.js','ghost-plus-ui-vi-safe.js'
+]){
+  assert.ok(requires.some(uri=>uri.endsWith('/'+runtimePin+'/'+name)),
+    name+': i18n release module must pin the same source checkpoint');
+}
+assert.doesNotMatch(read('ghost-plus-ui-vi-safe.js'),/font-size:\s*0\s*!important/,
+  'native Vietnamese UI must not hide English with CSS');
+assert.match(core,/data-ghost-code/,'machine controller status must be independent from visible Vietnamese labels');
+assert.match(read('ghost-plus-alert-router.js'),/__ghostPlusI18n\?\.event/,
+  'alerts must localize after machine event classification and deduplication');
+
 
 const forbidden=[
   [/\bsetInterval\s*\(/,'native setInterval'],

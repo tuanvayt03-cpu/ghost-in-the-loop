@@ -58,7 +58,7 @@ function ensureUi(text = '') {
     host.appendChild(row);RT.node(row);
   }
   row.innerHTML = text
-    ? '<b>Giới hạn context:</b> ĐÃ CHẠM · Ghost đã dừng. Cần chuyển sang chat mới thủ công.'
+    ? '<b>Giới hạn hội thoại:</b> ĐÃ CHẠM · Ghost đã dừng. Cần chuyển thủ công sang cuộc trò chuyện mới.'
     : '';
   row.title = text || '';
 }
@@ -79,7 +79,7 @@ function stopGhostForBoundary(text) {
   let gated = false;
   try {
     if (window.__ghostPlusSupervisor?.lock) {
-      window.__ghostPlusSupervisor.lock('CONTEXT_BOUNDARY', { reason:text || 'Context limit reached; manual handoff to a new chat is required.' });
+      window.__ghostPlusSupervisor.lock('CONTEXT_BOUNDARY', { reason:text || 'Đã chạm giới hạn hội thoại; cần tự chuyển công việc sang cuộc trò chuyện mới.' });
       gated = true;
     }
   } catch (_) {}
@@ -87,7 +87,7 @@ function stopGhostForBoundary(text) {
     try {
       GM_notification?.({
         title: 'Ghost+ · đoạn chat quá dài',
-        text: 'Ghost đã STOP. Không retry/recovery trong chat này. Cần mở chat mới và handoff thủ công.',
+        text: 'Ghost đã dừng. Không thử lại hoặc khôi phục trong cuộc trò chuyện này. Hãy mở cuộc trò chuyện mới và bàn giao thủ công.',
         timeout: 12000
       });
     } catch (_) {}

@@ -1,53 +1,32 @@
 (() => {
 'use strict';
 const RT=window.__ghostPlusRuntime?.module('ui-vi');if(!RT)return;
-if (window.__GHOST_PLUS_VI_SAFE__) return;
-window.__GHOST_PLUS_VI_SAFE__ = true;
+if(window.__GHOST_PLUS_VI_SAFE__)return;
+window.__GHOST_PLUS_VI_SAFE__=true;
 
-const style = document.createElement('style');
-style.id = 'ghost-plus-vi-safe-style';
-style.textContent = `
-/* Ghost core: visual-only Vietnamese labels. No DOM mutation, no observer. */
-#gitl9 [data-tab="play"],
-#gitl9 [data-tab="export"],
-#gitl9 [data-a="play"],
-#gitl9 [data-a="stop"],
-#gitl9 [data-a="reload"],
-#gitl9 [data-a="report"],
-#gitl9 [data-a="copy"],
-#gitl9 [data-a="md"],
-#gitl9 [data-a="json"] { font-size: 0 !important; }
-
-#gitl9 [data-tab="play"]::after { content: "Chạy"; font-size: 12px; }
-#gitl9 [data-tab="export"]::after { content: "Xuất"; font-size: 12px; }
-#gitl9 [data-a="play"]::after { content: "▶ Chạy"; font-size: 12px; }
-#gitl9 [data-a="stop"]::after { content: "■ Dừng"; font-size: 12px; }
-#gitl9 [data-a="reload"]::after { content: "↻ Tải lại"; font-size: 12px; }
-#gitl9 [data-a="report"]::after { content: "Sao chép báo cáo lỗi"; font-size: 12px; }
-#gitl9 [data-a="copy"]::after { content: "Sao chép MD"; font-size: 12px; }
-#gitl9 [data-a="md"]::after { content: "Lưu MD"; font-size: 12px; }
-#gitl9 [data-a="json"]::after { content: "Lưu JSON"; font-size: 12px; }
-
-#gitl9 [data-pane="play"] > .tiny:not([data-runtime]),
-#gitl9 [data-pane="aoa"] > .tiny,
-#gitl9 [data-pane="export"] > .tiny { font-size: 0 !important; }
-#gitl9 [data-runtime]{font-size:10px!important;opacity:.72!important}
-
-#gitl9 [data-pane="play"] > .tiny:not([data-runtime])::after {
-  content: "Cơ chế lõi: đọc dòng điều khiển cuối → gửi đúng một lần → lặp. Không tự gửi lại khi trạng thái gửi chưa chắc chắn.";
-  font-size: 10px;
+// Vietnamese is rendered by each module at its source through the i18n
+// service. This stylesheet ONLY keeps longer labels usable on small screens.
+// It never masks original English text, changes control IDs, or mutates DOM.
+const style=document.createElement('style');
+style.id='ghost-plus-vi-safe-style';
+style.textContent=`
+#gitl9 button,
+#ghostplus-gate button,
+#ghostplus-watch button{white-space:normal!important;overflow-wrap:anywhere}
+#gitl9 .tabs button{min-width:0;line-height:1.3}
+#gitl9 .row{flex-wrap:wrap}
+#gitl9 .status,
+#ghostplus-gate [data-r],
+#ghostplus-gate [data-msg],
+#ghostplus-busy-detail{overflow-wrap:anywhere;white-space:normal}
+#ghostplus-watch [data-budget-state]{min-width:0;flex:1}
+@media(max-width:520px){
+  #gitl9{width:min(300px,calc(100vw - 12px))!important}
+  #gitl9 .tabs{flex-wrap:wrap}
+  #gitl9 button{min-width:64px}
+  #ghostplus-gate .r{flex-wrap:wrap}
 }
-#gitl9 [data-pane="aoa"] > .tiny::after {
-  content: "Các giao thức tùy chọn vẫn dùng nguồn ngoài. Ghost chỉ trỏ AI tới nguồn chuẩn; cơ chế gửi không thay đổi.";
-  font-size: 10px;
-}
-#gitl9 [data-pane="export"] > .tiny::after {
-  content: "Ưu tiên API khi được hỗ trợ; nếu phải đọc DOM sẽ được đánh dấu là dữ liệu một phần.";
-  font-size: 10px;
-}
-
-/* Watchdog controls are already rendered directly in Vietnamese by ghost-plus-companion.js.
-   Do not rewrite them here; this file remains visual-only and side-effect free. */
 `;
-(document.head || document.documentElement).appendChild(style);RT.node(style);
+(document.head||document.documentElement).appendChild(style);
+RT.node(style);
 })();

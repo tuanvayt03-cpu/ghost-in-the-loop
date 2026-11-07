@@ -37,9 +37,9 @@ function persistSemantic(){
 function dispatch(e={}){
   const base={id:e.id||path()+':'+(e.type||'GENERAL')+':'+now(),type:e.type||'GENERAL',severity:e.severity||'info',group:e.group||'general',title:n(e.title||'Ghost+'),text:n(e.text||''),reason:n(e.reason||''),chat:e.chat||chat(),path:e.path||path(),episodeId:e.episodeId||'',source:e.source||'structured',at:Number(e.at)||now(),data:e.data||null};
   const sk=semanticKey(base),ttl=semanticTtl(base),last=semanticSeen.get(sk)||0;
-  if(last&&now()-last<ttl)return Object.freeze({...base,suppressed:true,dedupeKey:sk});
+  if(last&&now()-last<ttl)return Object.freeze({...(window.__ghostPlusI18n?.event?.(base)??base),suppressed:true,dedupeKey:sk});
   semanticSeen.set(sk,now());persistSemantic();
-  const x=Object.freeze({...base,suppressed:false,dedupeKey:sk});
+  const translated=window.__ghostPlusI18n?.event?.(base)??base;const x=Object.freeze({...translated,suppressed:false,dedupeKey:sk});
   for(const f of [...subs])try{f(x)}catch(_){}
   try{window.dispatchEvent(new CustomEvent('ghostplus:alert',{detail:x}))}catch(_){}
   return x

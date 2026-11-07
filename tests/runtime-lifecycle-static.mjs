@@ -222,8 +222,10 @@ assert.match(webRecovery,/observeActiveRecovery\(snap,attempt\)/,'active recover
 assert.match(webRecovery,/assistantCountStable:assistants\(\)\.length===beforeAssistants/,'assistant-count evidence missing');
 assert.match(webRecovery,/ownedRecoveryAttempt:recoveryAttemptOwned\(snap,attempt\)/,'owned recovery-attempt evidence missing');
 assert.match(webRecovery,/S\.verifiedFailureRetries < CFG\.verifiedFailureRetryMax/,'controlled retry path missing');
-assert.match(webRecovery,/Không nâng HUMAN và không resend thêm/,'verified failed send must not escalate to HUMAN');
-assert.match(webRecovery,/Outcome thật sự uncertain; cần kiểm tra thủ công\./,'uncertain evidence must still escalate to HUMAN');
+assert.match(webRecovery,/Không yêu cầu người dùng chỉ vì lỗi đã rõ, không tự gửi lại/,'verified failed send must remain non-HUMAN in Vietnamese');
+const verifiedFailureSection=webRecovery.slice(webRecovery.indexOf('function explicitFailureExhausted('),webRecovery.indexOf('function isStreamDesyncType('));
+assert.doesNotMatch(verifiedFailureSection,/requireHuman\(/,'verified failed send must never create a HUMAN gate');
+assert.match(webRecovery,/Kết quả chưa rõ; cần kiểm tra thủ công\./,'uncertain evidence must still escalate to HUMAN, with a Vietnamese explanation');
 
 const gateRuntime=read('ghost-plus-operator-gate.js');
 assert.match(gateRuntime,/g\.transient==='WEB_SEND_UNCERTAIN'&&g\.autoReconcile/,'only named WEB_SEND_UNCERTAIN gates may be auto-reconciled');

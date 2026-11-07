@@ -22,7 +22,7 @@ const token=()=>n(get(K.t,''));
 const dest=()=>n(get(K.c,''));
 const thread=()=>{const v=Number(get(K.h,0));return Number.isInteger(v)&&v>0?v:0};
 const enabled=()=>get(K.e,false)===true;
-const ghostRunningNow=()=>/^RUNNING\b/i.test(n(q('#gitl9 .status')?.textContent||''));
+const ghostRunningNow=()=>/^RUNNING\b/i.test(n(q('#gitl9 .status')?.dataset?.ghostCode||q('#gitl9 .status')?.textContent||''));
 const scopePath=()=>String(location.pathname||'/').split(/[?#]/)[0];
 const scoped=k=>k+':'+encodeURIComponent(scopePath());
 function json(k){try{const v=get(k,'{}');return typeof v==='object'?(v||{}):JSON.parse(String(v||'{}'))}catch(_){return{}}}
@@ -65,7 +65,7 @@ function semanticTtl(e){
 }
 function semanticKey(e){
   if(!e)return'';
-  const stable=n(e.episodeId||e.reason||e.text||'').toLowerCase();
+  const stable=n(e.episodeId||e.dedupeKey||e.reason||e.text||'').toLowerCase();
   return fp([scopePath(),e.type||'GENERAL',e.group||'general',stable].join('|'))
 }
 function semanticMap(){return json(scoped(K.d))}
@@ -154,8 +154,8 @@ function req(method,data={}){
         headers:{'Content-Type':'application/json'},data:JSON.stringify(data),timeout:10000,
         onload:r=>{let b={};try{b=JSON.parse(r.responseText||'{}')}catch(_){}
           r.status>=200&&r.status<300&&b.ok?finish(ok,b.result):finish(no,new Error(b.description||('Telegram HTTP '+r.status)))},
-        onerror:()=>finish(no,new Error('Telegram network error')),
-        ontimeout:()=>finish(no,new Error('Telegram timeout')),
+        onerror:()=>finish(no,new Error('Lỗi kết nối Telegram')),
+        ontimeout:()=>finish(no,new Error('Telegram phản hồi quá thời gian')),
         onabort:()=>finish(no,new Error('Ghost runtime destroyed'))
       });
       RT.abortable(h);
@@ -186,11 +186,12 @@ function should(e){
 }
 function text(e,rem=false){
   const ic=/HUMAN|CONTEXT|AUTH|RECOVERY_EXHAUSTED/.test(e.type)?'🔴':e.type==='COMPLETE'?'🟢':'🟠';
-  const a=[ic+' Ghost+ — '+String(e.type||'ALERT').replaceAll('_',' '),e.chat||window.__ghostPlusCurrentChatName?.()||'ChatGPT'];
-  if(e.episodeId)a.push('Job: '+e.episodeId);
-  if(rem)a.push('Reminder: job vẫn đang chờ người xử lý.');
-  if(get(K.r,false)===true&&e.reason)a.push('Reason: '+n(e.reason).slice(0,280));
-  if(['HUMAN_REQUIRED','MODEL_RELAY','CONTEXT_BOUNDARY'].includes(e.type))a.push('Status: PAUSED — auto continuation/recovery bị khóa.');
+  const vi=s=>window.__ghostPlusI18n?.display?.(s)??s;
+  const a=[ic+' Ghost+ — '+vi(e.type||'ALERT'),e.chat||window.__ghostPlusCurrentChatName?.()||'ChatGPT'];
+  if(e.episodeId)a.push('Mã tác vụ: '+e.episodeId);
+  if(rem)a.push('Nhắc lại: tác vụ vẫn đang chờ người dùng xử lý.');
+  if(get(K.r,false)===true&&e.reason)a.push('Nguyên nhân: '+vi(n(e.reason).slice(0,280)));
+  if(['HUMAN_REQUIRED','MODEL_RELAY','CONTEXT_BOUNDARY'].includes(e.type))a.push('Trạng thái: Đã tạm dừng — tự động tiếp tục và khôi phục bị khóa.');
   return a.join('\n')
 }
 const RETRY_MS=[0,15000,60000,300000,900000,1800000];
@@ -240,12 +241,12 @@ async function getMe(){
   set(K.b,me?.username||me?.first_name||'bot');set(K.e,true);lastError='';rearmOutbox();drainOutbox(true);render();return me
 }
 async function test(){
-  if(!dest())throw new Error('Chưa có destination');
-  await retry('sendMessage',targetPayload({text:'👻 Ghost+ test OK\nAlerts ready.'}),1);
+  if(!dest())throw new Error('Chưa thiết lập nơi nhận');
+  await retry('sendMessage',targetPayload({text:'👻 Kiểm tra Ghost+ thành công\nĐã sẵn sàng nhận cảnh báo.'}),1);
   rearmOutbox();drainOutbox(true)
 }
 function secureCode(){
-  if(!globalThis.crypto?.getRandomValues)throw new Error('Secure random unavailable');
+  if(!globalThis.crypto?.getRandomValues)throw new Error('Không có bộ tạo số ngẫu nhiên bảo mật');
   const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',b=new Uint8Array(6);crypto.getRandomValues(b);
   return[...b].map(x=>a[x%a.length]).join('')
 }
@@ -277,10 +278,10 @@ async function poll(){
 }
 function saveDest(v,threadValue=''){
   v=n(v);
-  if(/^https?:\/\/t\.me\//i.test(v)||/^t\.me\//i.test(v))throw new Error('Invite link không phải chat_id. Dùng Bind topic/group.');
-  if(v&&!/^-?\d+$/.test(v)&&!/^@[A-Za-z0-9_]{4,}$/.test(v))throw new Error('Dùng numeric Chat ID hoặc @username');
+  if(/^https?:\/\/t\.me\//i.test(v)||/^t\.me\//i.test(v))throw new Error('Liên kết mời không phải mã cuộc trò chuyện. Hãy dùng chức năng Liên kết nhóm/chủ đề.');
+  if(v&&!/^-?\d+$/.test(v)&&!/^@[A-Za-z0-9_]{4,}$/.test(v))throw new Error('Hãy nhập mã cuộc trò chuyện dạng số hoặc @username');
   const tv=n(threadValue);
-  if(tv&&!/^\d+$/.test(tv))throw new Error('Topic ID phải là số.');
+  if(tv&&!/^\d+$/.test(tv))throw new Error('Mã chủ đề phải là số.');
   if(v){set(K.c,v);set(K.n,v)}
   set(K.h,tv?String(Number(tv)):'');set(K.p,tv?('topic #'+Number(tv)):'');
   if(v||dest())set(K.e,true);
@@ -305,9 +306,9 @@ function copyBindCommand(){
   try{
     if(typeof GM_setClipboard==='function')GM_setClipboard(command,'text');
     else if(navigator.clipboard?.writeText)navigator.clipboard.writeText(command);
-    else throw new Error('Clipboard API unavailable');
-    lastError='Đã copy '+command+' ✓';
-  }catch(e){lastError='Không copy được: '+n(e?.message||e)}
+    else throw new Error('Không thể truy cập bộ nhớ tạm');
+    lastError='Đã sao chép '+command+' ✓';
+  }catch(e){lastError='Không sao chép được: '+n(e?.message||e)}
   render()
 }
 function ui(){
@@ -319,15 +320,15 @@ function ui(){
     '<div style="display:grid;gap:5px;margin-top:6px">'+
       '<input data-token type="text" autocomplete="off" spellcheck="false" placeholder="Bot Token" style="width:100%;box-sizing:border-box">'+
       '<input data-dest placeholder="Chat ID hoặc @username" style="width:100%;box-sizing:border-box">'+
-      '<input data-thread inputmode="numeric" placeholder="Topic ID (tự điền khi Bind)" style="width:100%;box-sizing:border-box">'+
+      '<input data-thread inputmode="numeric" placeholder="Mã chủ đề (tự điền khi liên kết)" style="width:100%;box-sizing:border-box">'+
       '<div data-actions style="display:grid;grid-template-columns:1fr 1fr;gap:5px">'+
-        '<button data-save>💾 Save</button><button data-check>✓ Check bot</button>'+
-        '<button data-bind>🔗 Bind topic/group</button><button data-test>✉ Test</button>'+
+        '<button data-save>💾 Lưu</button><button data-check>✓ Kiểm tra bot</button>'+
+        '<button data-bind>🔗 Liên kết nhóm/chủ đề</button><button data-test>✉ Thử gửi</button>'+
       '</div>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-        '<label><input data-reason type="checkbox"> reason</label>'+
-        '<label><input data-stall type="checkbox"> stall</label>'+
-        '<label><input data-done type="checkbox"> complete</label>'+
+        '<label><input data-reason type="checkbox"> gửi nguyên nhân</label>'+
+        '<label><input data-stall type="checkbox"> cảnh báo treo</label>'+
+        '<label><input data-done type="checkbox"> hoàn thành</label>'+
       '</div>'+
       '<div data-help style="line-height:1.35"></div><div data-error style="color:#b91c1c;line-height:1.35"></div>'+
     '</div>';
@@ -341,7 +342,7 @@ function ui(){
   q('[data-save]',r).onclick=()=>{try{saveUi()}catch(e){lastError=n(e?.message||e);render()}};
   q('[data-check]',r).onclick=async()=>{try{applyTokenInput(tokenEl);await getMe();lastError='Bot hợp lệ.';render()}catch(e){lastError=n(e?.message||e);render()}};
   q('[data-bind]',r).onclick=()=>bind().catch(e=>{lastError=n(e?.message||e);render()});
-  q('[data-test]',r).onclick=async()=>{try{applyTokenInput(tokenEl);saveDest(n(q('[data-dest]',r).value),n(q('[data-thread]',r).value));await test();lastError='Test OK.';render()}catch(e){lastError=n(e?.message||e);render()}};
+  q('[data-test]',r).onclick=async()=>{try{applyTokenInput(tokenEl);saveDest(n(q('[data-dest]',r).value),n(q('[data-thread]',r).value));await test();lastError='Thử gửi thành công.';render()}catch(e){lastError=n(e?.message||e);render()}};
   q('[data-reason]',r).onchange=e=>set(K.r,!!e.target.checked);
   q('[data-stall]',r).onchange=e=>set(K.s,!!e.target.checked);
   q('[data-done]',r).onchange=e=>set(K.f,!!e.target.checked);
@@ -356,21 +357,21 @@ function render(){
   if(document.activeElement!==te)te.value=th?String(th):'';
   const target=name+(th?' · '+(topic||('topic #'+th)):'');
   const queuedN=outboxCount();
-  q('[data-st]',r).textContent=(ok?'✓ '+(bot?'@'+bot.replace(/^@/,'')+' → ':'')+target:token()?(dest()?'token ✓ · đích ✓':'token ✓ · chưa bind'):'chưa cấu hình')+(queuedN?' · queue '+queuedN:'');
+  q('[data-st]',r).textContent=(ok?'✓ '+(bot?'@'+bot.replace(/^@/,'')+' → ':'')+target:token()?(dest()?'mã truy cập ✓ · nơi nhận ✓':'mã truy cập ✓ · chưa liên kết'):'chưa cấu hình')+(queuedN?' · đang chờ gửi '+queuedN:'');
   q('[data-reason]',r).checked=get(K.r,false)===true;
   q('[data-stall]',r).checked=get(K.s,true)!==false;
   q('[data-done]',r).checked=get(K.f,false)===true;
   const help=q('[data-help]',r);
   if(code){
     const command='/ghost_bind '+code;
-    help.innerHTML='<span>Gửi </span><button type="button" data-copy-bind title="Bấm để copy command" style="padding:1px 5px;border:1px solid rgba(59,130,246,.35);border-radius:5px;background:rgba(239,246,255,.9);color:#1d4ed8;cursor:pointer;font:10px ui-monospace,monospace"></button><span> NGAY TRONG topic muốn nhận alert · '+Math.max(0,Math.ceil((deadline-now())/1000))+'s</span>';
+    help.innerHTML='<span>Gửi </span><button type="button" data-copy-bind title="Bấm để sao chép lệnh" style="padding:1px 5px;border:1px solid rgba(59,130,246,.35);border-radius:5px;background:rgba(239,246,255,.9);color:#1d4ed8;cursor:pointer;font:10px ui-monospace,monospace"></button><span> NGAY TRONG topic muốn nhận alert · '+Math.max(0,Math.ceil((deadline-now())/1000))+' giây</span>';
     const copy=q('[data-copy-bind]',help);
     copy.textContent=command;
     copy.onclick=copyBindCommand;
   }else{
     help.textContent=th
-      ?'Đang gửi vào topic ID '+th+'. Muốn đổi topic: Bind lại và gửi mã trong topic mới.'
-      :'Bind topic/group: gửi mã bind trong đúng topic. Nếu gửi ở General thì alert sẽ vào General.';
+      ?'Đang gửi vào mã chủ đề '+th+'. Muốn đổi chủ đề: liên kết lại và gửi mã trong chủ đề mới.'
+      :'Liên kết nhóm/chủ đề: gửi mã liên kết trong đúng chủ đề. Nếu gửi ở nhóm chung, cảnh báo sẽ vào nhóm chung.';
   }
   q('[data-error]',r).textContent=lastError
 }

@@ -112,7 +112,7 @@ function restoreTabTitle(){
   S.titleLastRendered='';
 }
 function episode(t){let n=(Number(GM_getValue(KS,0))||0)+1;try{GM_setValue(KS,n)}catch(_){}return `${meta(t).code}-${hash(key()).split(':').pop().slice(-4).toUpperCase()}-${String(n).padStart(3,'0')}`}
-function status(){return norm(q('#gitl9 .status')?.innerText||'')}
+function status(){const e=q('#gitl9 .status');return norm(e?.dataset?.ghostCode?e.dataset.ghostCode+' '+(e.dataset.ghostDetail||''):e?.innerText||'')}
 function stop(){const b=q('#gitl9 [data-a="stop"]');try{b?.click();return !!b}catch(_){return false}}
 function play(){return q('#gitl9 [data-a="play"]')}
 function composer(){return window.__ghostPlusRuntime?.dom?.composer?.()||q('#prompt-textarea')||q('textarea[data-id="root"]')}
@@ -137,7 +137,7 @@ function clearLegacyOperationalGate(){
   if(norm(g.reason)!==oldReason)return false;
   const id=g.id;
   clear(false);
-  S.msg=`Đã tự dọn gate cũ ${id}: draft trong ô nhập là trạng thái vận hành, không phải HUMAN.`;
+  S.msg=`Đã tự xử lý chốt cũ ${id}: bản nháp trong ô nhập là trạng thái vận hành, không phải yêu cầu người dùng quyết định.`;
   emit({id:`legacy-gate-cleared:${id}`,type:'LEGACY_OPERATIONAL_GATE_CLEARED',severity:'info',group:'operator',title:'Ghost+ cleared legacy operational gate',text:id,episodeId:id,reason:'legacy-composer-draft-gate',source:'gate',desktop:false});
   return true;
 }
@@ -155,7 +155,7 @@ function clearV01513FalseTriageGate(){
   if(!sm||!em||ty!=='proceed')return false;
   const id=g.id;
   clear(false);
-  S.msg=`Đã tự dọn false HUMAN gate 15.13 ${id}; report timeout xác nhận TIẾP_TỤC an toàn.`;
+  S.msg=`Đã tự dọn chốt yêu cầu người dùng sai ở bản 15.13 ${id}; báo cáo quá thời gian xác nhận có thể tiếp tục an toàn.`;
   emit({id:`triage-gate-cleared:${id}`,type:'FALSE_TRIAGE_GATE_CLEARED',severity:'info',group:'operator',title:'Ghost+ cleared v0.15.13 false triage gate',text:id,episodeId:id,reason:'v0.15.13-underscore-parser',source:'gate',desktop:false});
   RT.timeout(()=>{
     if(!RT.alive()||gate()||modelBusy()||ctext())return;
@@ -191,7 +191,7 @@ function autoReconcileTransientGate(){
   }else return false;
   const id=g.id,busy=modelBusy();
   clear(false);
-  S.msg=`Reconciled ${id}: ${why}. No replay.`;
+  S.msg=`Đã xác minh chốt ${id}: ${why}. Không gửi lại.`;
   emit({id:`gate-auto-clear:${id}`,type:'GATE_AUTO_RECONCILED',severity:'info',group:'operator',
     title:'Ghost+ verified gate reconciliation',text:`${id} · ${why}`,episodeId:id,reason:why,source:'gate',desktop:false});
   if(busy){
@@ -203,9 +203,9 @@ function autoReconcileTransientGate(){
   return true;
 }
 function style(){if(q('#ghostplus-gate-style'))return;const s=document.createElement('style');s.id='ghostplus-gate-style';s.textContent=`html[data-ghostplus-gate] #ghostplus-mini{box-shadow:0 0 0 3px rgba(239,68,68,.6),0 8px 24px rgba(15,23,42,.18)!important;background:#fff1f2!important;color:#991b1b!important}#ghostplus-gate{margin-top:6px;padding:7px;border:1px solid rgba(239,68,68,.4);border-radius:8px;background:#fff1f2;color:#7f1d1d;font:10px/1.35 system-ui}#ghostplus-gate .r{display:flex;gap:4px;margin-top:5px}#ghostplus-gate input{min-width:0;flex:1;font:10px system-ui;padding:4px}#ghostplus-gate button{font:10px system-ui;padding:4px 6px}`;document.documentElement.appendChild(s);RT.node(s)}
-function ui(){style();const h=q('#ghostplus-watch');if(!h)return null;let r=q('#ghostplus-gate',h);if(r)return r;r=document.createElement('div');r.id='ghostplus-gate';r.innerHTML=`<div><b data-t></b> <span data-id></span></div><div data-r style="margin-top:3px;max-height:54px;overflow:auto"></div><div class="r"><input data-note placeholder="Phản hồi/ghi chú"><button data-resume>Resume</button><button data-stop>Dừng Ghost</button></div><div data-msg style="margin-top:3px"></div>`;h.appendChild(r);RT.node(r);q('[data-resume]',r).onclick=e=>{if(!e.isTrusted)return;resume()};q('[data-stop]',r).onclick=e=>{if(!e.isTrusted)return;stop();clear(true)};return r}
-function render(){const r=ui(),g=S.gate||gate();if(!r)return;if(!g){r.style.display='none';return}S.gate=g;const m=meta(g.type);r.style.display='block';q('[data-t]',r).textContent=`${m.icon} ${m.label}`;q('[data-id]',r).textContent=g.id;q('[data-r]',r).textContent=g.model?`${g.reason||'Model relay requested'} · ${g.model}`:(g.reason||'Đang chờ người dùng.');q('[data-msg]',r).textContent=S.msg||'Auto Play/recovery đang bị khóa.'}
-function enforce(){const g=S.gate||gate();if(!g)return;S.gate=g;document.documentElement.setAttribute('data-ghostplus-gate',g.type);const st=q('#gitl9 .status');if(st)st.innerHTML=`<b>PAUSED</b> · ${g.type}<br>${g.id} · Controller: HARD_GATE · Host: ${modelBusy()?'BUSY (không can thiệp)':'IDLE'}`;const m=q('#ghostplus-mini'),gm=meta(g.type);if(m){m.textContent='⚠';m.title=`${g.type} · ${g.id}`}setGateTabTitle(g.type);render();guardDraft()}
+function ui(){style();const h=q('#ghostplus-watch');if(!h)return null;let r=q('#ghostplus-gate',h);if(r)return r;r=document.createElement('div');r.id='ghostplus-gate';r.innerHTML=`<div><b data-t></b> <span data-id></span></div><div data-r style="margin-top:3px;max-height:54px;overflow:auto"></div><div class="r"><input data-note placeholder="Phản hồi hoặc ghi chú cho Ghost"><button data-resume>Tiếp tục</button><button data-stop>Dừng Ghost</button></div><div data-msg style="margin-top:3px"></div>`;h.appendChild(r);RT.node(r);q('[data-resume]',r).onclick=e=>{if(!e.isTrusted)return;resume()};q('[data-stop]',r).onclick=e=>{if(!e.isTrusted)return;stop();clear(true)};return r}
+function render(){const r=ui(),g=S.gate||gate();if(!r)return;if(!g){r.style.display='none';return}S.gate=g;const m=meta(g.type);r.style.display='block';q('[data-t]',r).textContent=`${m.icon} ${window.__ghostPlusI18n?.display?.(m.label)??m.label}`;q('[data-id]',r).textContent=g.id;const explanation=g.model?`${g.reason||'Model relay requested'} · ${g.model}`:(g.reason||'Đang chờ người dùng.');q('[data-r]',r).textContent=window.__ghostPlusI18n?.display?.(explanation)??explanation;q('[data-msg]',r).textContent=window.__ghostPlusI18n?.display?.(S.msg||'Auto Play/recovery đang bị khóa.')??(S.msg||'Auto Play/recovery đang bị khóa.')}
+function enforce(){const g=S.gate||gate();if(!g)return;S.gate=g;document.documentElement.setAttribute('data-ghostplus-gate',g.type);const st=q('#gitl9 .status');if(st){const translate=window.__ghostPlusI18n?.display;st.dataset.ghostCode='PAUSED';st.dataset.ghostDetail=g.type;st.innerHTML=`<b>${translate?.('PAUSED')??'PAUSED'}</b> · ${translate?.(g.type)??g.type}<br>${g.id} · ${translate?'Ghost: chốt an toàn · ChatGPT: '+(modelBusy()?'đang xử lý (không can thiệp)':'đang nghỉ'):'Controller: HARD_GATE · Host: '+(modelBusy()?'BUSY (không can thiệp)':'IDLE')}`};const m=q('#ghostplus-mini'),gm=meta(g.type);if(m){m.textContent='⚠';m.title=`${g.type} · ${g.id}`}setGateTabTitle(g.type);render();guardDraft()}
 function guardDraft(){if(!S.gate)return;const e=composer(),t=ctext(e);if(!/^\[(WEB|WATCHDOG) RECOVERY STATUS PROBE\]/i.test(t))return;try{if(e.isContentEditable){e.textContent='';e.dispatchEvent(new Event('input',{bubbles:true}))}else{e.value='';e.dispatchEvent(new Event('input',{bubbles:true}))}S.msg='Đã chặn recovery probe trong lúc gate khóa.';render()}catch(_){}}
 async function resume(){
   if(S.busy||S.resumePending)return;
@@ -214,9 +214,9 @@ async function resume(){
     if(g.type==='HUMAN_REQUIRED'&&(g.transient==='WEB_SEND_UNCERTAIN'||legacyProtocolDriftGate(g))){
       // An explicit operator click can adopt the active turn. No Send and
       // no replay, even when the legacy protocol gate lacks turn baseline.
-      if(ctext()){S.msg='Ô nhập đang có draft; không adopt khi draft chưa được xử lý.';render();return}
+      if(ctext()){S.msg='Ô nhập còn nội dung; chưa thể nhận lượt đang chạy khi bản nháp chưa được xử lý.';render();return}
       const id=g.id;clear(false);
-      S.msg=`Operator resumed ${id}: adopted active ChatGPT turn without Send.`;
+      S.msg=`Đã tiếp tục ${id}: nhận lượt ChatGPT đang xử lý mà không gửi thêm.`;
       emit({id:`manual-adopt:${id}`,type:'GATE_RESUMED',severity:'info',group:'operator',title:'Ghost+ adopted active turn',text:id,episodeId:id,desktop:false});
       RT.timeout(()=>{if(RT.alive()&&!gate()&&modelBusy()&&!ctext())try{play()?.click()}catch(_){}},0);
       return;
@@ -224,7 +224,7 @@ async function resume(){
     S.msg='ChatGPT đang tạo phản hồi. Chờ lượt hiện tại kết thúc, không gửi trùng.';
     render();return;
   }
-  if(ctext()){S.msg='Ô nhập đang có draft. Hãy gửi/xóa draft trước khi Resume.';render();return}
+  if(ctext()){S.msg='Ô nhập còn nội dung. Hãy gửi hoặc xóa bản nháp trước khi tiếp tục.';render();return}
   S.busy=true;
   const note=norm(q('#ghostplus-gate [data-note]')?.value||'');
   const p=['[OPERATOR GATE RESOLVED]','A human explicitly authorized continuation.',
@@ -234,21 +234,21 @@ async function resume(){
   stop();await sleep(100);
   if(!RT.alive()){S.busy=false;return}
   if(!await setComposer(p)){
-    S.busy=false;S.msg='Không stage được resume prompt; gate vẫn khóa.';render();return;
+    S.busy=false;S.msg='Không chuẩn bị được yêu cầu tiếp tục; chốt an toàn vẫn khóa.';render();return;
   }
   if(g.type==='RECOVERY_EXHAUSTED')try{window.__ghostPlusWatchdog?.resetRecoveryEpisode?.()}catch(_){}
   // Keep the gate persisted and locked against all other recovery writers.
   // Only this explicit Resume's Core receipt may commit gate clearance.
   S.resumePending={id:g.id,chatKey:key(),startedAt:now()};
-  S.msg='Đã stage Resume; chờ Core xác nhận user-turn receipt trước khi mở gate.';
+  S.msg='Đã chuẩn bị yêu cầu tiếp tục; chờ lõi xác nhận tin đã gửi trước khi mở chốt an toàn.';
   render();
   const b=play();
   if(!b||!b.isConnected){
-    S.resumePending=null;S.busy=false;S.msg='Play chưa khả dụng; gate vẫn khóa và không retry.';render();return;
+    S.resumePending=null;S.busy=false;S.msg='Chức năng chạy chưa khả dụng; chốt an toàn vẫn khóa và không tự thử lại.';render();return;
   }
   try{b.click()}catch(e){
     S.resumePending=null;S.busy=false;
-    S.msg='Play thất bại trước Send; gate vẫn khóa: '+String(e?.message||e);render();return;
+    S.msg='Không thể khởi chạy trước khi gửi; chốt an toàn vẫn khóa: '+String(e?.message||e);render();return;
   }
   S.busy=false;
   RT.timeout(()=>{
@@ -256,7 +256,7 @@ async function resume(){
     // Timeout is NOT proof of Send failure: retain the persisted gate, do
     // not replay and require fresh reconciliation of the uncertain outcome.
     S.resumePending=null;
-    S.msg='Resume chưa có receipt sau thời hạn; gate giữ khóa, không tự gửi lại.';
+    S.msg='Quá thời gian mà chưa xác nhận được tin gửi; chốt an toàn vẫn khóa, không tự gửi lại.';
     enforce();
   },50000);
 }
@@ -267,12 +267,12 @@ RT.listen(window,'ghostplus-core-send-confirmed',e=>{
   const id=g.id;
   if(g.h)saveAck(key(),g.h);
   clear(false);
-  S.msg=`Resume ${id}: Core đã xác nhận Send receipt.`;
+  S.msg=`Đã tiếp tục ${id}: lõi đã xác nhận gửi thành công.`;
   emit({id:`resumed:${id}`,type:'GATE_RESUMED',severity:'info',group:'operator',
     title:'Ghost+ resumed with confirmed receipt',text:id,episodeId:id,desktop:false});
 });
 function evaluate(){const k=key();if(k!==S.key){if(S.titleLastRendered)restoreTabTitle();S.key=k;S.gate=gate(k);S.last='';resetTabTitleKey()}if(S.gate){if(S.resumePending?.id===S.gate.id){render();return}if(clearLegacyOperationalGate())return;if(clearV01513FalseTriageGate())return;if(autoReconcileTransientGate())return;enforce();return}if(q('#ghostplus-context-boundary-state')){lock('CONTEXT_BOUNDARY',{reason:'Context limit reached; manual handoff to a new chat is required.'});return}if(modelBusy()){render();return}const t=latest(),h=hash(t);if(t&&h!==S.last){S.last=h;const [ty,model]=term(t);if(ty==='human'&&ack(k)!==h)lock('HUMAN_REQUIRED',{h,reason:reason(t)});else if(ty==='relay'&&ack(k)!==h)lock('MODEL_RELAY',{h,reason:reason(t),model})}if(S.gate)enforce();else{if(S.titleLastRendered)restoreTabTitle();render()}}
-RT.listen(document,'click',e=>{const b=e.target instanceof Element?e.target.closest('#gitl9 [data-a="play"]'):null,g=S.gate||gate();if(!b||!g||S.resumePending?.id===g.id)return;e.preventDefault();e.stopImmediatePropagation();S.msg=`Play bị khóa bởi ${g.type} · ${g.id}.`;render()},true);
+RT.listen(document,'click',e=>{const b=e.target instanceof Element?e.target.closest('#gitl9 [data-a="play"]'):null,g=S.gate||gate();if(!b||!g||S.resumePending?.id===g.id)return;e.preventDefault();e.stopImmediatePropagation();S.msg=`Không thể chạy vì ${window.__ghostPlusI18n?.display?.(g.type)??g.type} · ${g.id}.`;render()},true);
 RT.interval(evaluate,600);
 RT.cleanup(()=>{S.busy=false;document.documentElement.removeAttribute('data-ghostplus-gate');restoreTabTitle()});
 window.__ghostPlusSupervisor={version:'0.15',gate:()=>S.gate||gate(),isLocked:()=>!!(S.gate||gate()),canAutoAct:()=>!(S.gate||gate()),lock,emitAlert:emit,chatKey:key};

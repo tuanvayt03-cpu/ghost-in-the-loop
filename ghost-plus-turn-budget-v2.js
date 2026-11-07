@@ -83,7 +83,7 @@ function composer(){ return window.__ghostPlusRuntime?.dom?.composer?.() || q('#
 function composerText(el=composer()){ const shared=window.__ghostPlusRuntime?.dom?.readComposer; return shared ? shared(el) : norm(el?.innerText ?? el?.textContent ?? el?.value ?? ''); }
 function usersCount(){ const shared=window.__ghostPlusRuntime?.dom?.chatgptUserCount; return shared ? Number(shared())||0 : qa('[data-message-author-role="user"]').filter(el=>el.isConnected).length; }
 function ghostRunning(){
-  return /^RUNNING\b/i.test(norm(q('#gitl9 .status')?.textContent||''));
+  return /^RUNNING\b/i.test(norm(q('#gitl9 .status')?.dataset?.ghostCode||q('#gitl9 .status')?.textContent||''));
 }
 function generating(){
   const host=window.__ghostPlusRuntime?.dom?.chatgptHostControlState?.();
@@ -188,7 +188,7 @@ function ensureUi(){
   let row=q('#ghostplus-turn-budget',host); if(row) return row;
   row=document.createElement('div'); row.id='ghostplus-turn-budget';
   row.style.cssText='margin-top:5px;padding-top:5px;border-top:1px solid rgba(148,163,184,.25);font-size:10px;line-height:1.35';
-  row.innerHTML=`<div style="display:flex;align-items:center;justify-content:space-between;gap:6px"><span><span data-budget-dot style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#94a3b8;margin-right:4px"></span><b>Ngân sách turn</b> <span data-budget-state>chờ turn</span></span><span data-budget-elapsed>00:00</span></div><div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:4px"><select data-budget-min style="font:10px system-ui;padding:3px 4px;border:1px solid rgba(148,163,184,.42);border-radius:5px;background:#fff;color:#475569"><option value="0">Tắt</option><option value="15">15 phút</option><option value="18">18 phút</option><option value="20">20 phút</option><option value="22">22 phút</option><option value="24">24 phút</option></select><span style="color:#64748b">80% wrap · 90% checkpoint · không tự Stop</span></div>`;
+  row.innerHTML=`<div style="display:flex;align-items:center;justify-content:space-between;gap:6px"><span><span data-budget-dot style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#94a3b8;margin-right:4px"></span><b>Giới hạn thời gian mỗi lượt</b> <span data-budget-state>chờ turn</span></span><span data-budget-elapsed>00:00</span></div><div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:4px"><select data-budget-min style="font:10px system-ui;padding:3px 4px;border:1px solid rgba(148,163,184,.42);border-radius:5px;background:#fff;color:#475569"><option value="0">Tắt</option><option value="15">15 phút</option><option value="18">18 phút</option><option value="20">20 phút</option><option value="22">22 phút</option><option value="24">24 phút</option></select><span style="color:#64748b">80%: tổng kết · 90%: lưu mốc · không tự dừng</span></div>`;
   host.appendChild(row);
   const select=q('[data-budget-min]',row); select.value=String(budgetMinutes());
   select.onchange=e=>{setBudgetMinutes(e.target.value);setStartedAt(0);};
@@ -206,13 +206,13 @@ function renderUi(){
   const elapsed=startedAt?Math.max(0,now()-startedAt):0;
   const limit=minutes*60000;
   const state=q('[data-budget-state]',row), elapsedEl=q('[data-budget-elapsed]',row), dot=q('[data-budget-dot]',row);
-  elapsedEl.textContent=startedAt?`${fmtElapsed(elapsed)} / ${minutes||0}m`:'00:00';
+  elapsedEl.textContent=startedAt?`${fmtElapsed(elapsed)} / ${minutes||0} phút`:'00:00';
   dot.style.background='#94a3b8';
   if(!minutes) state.textContent='tắt';
   else if(!startedAt) state.textContent='chờ turn';
-  else if(elapsed>=limit){state.textContent='quá budget · chờ safe checkpoint';dot.style.background='#ef4444';}
+  else if(elapsed>=limit){state.textContent='quá thời hạn · chờ mốc an toàn';dot.style.background='#ef4444';}
   else if(elapsed>=limit*.9){state.textContent='checkpoint ngay';dot.style.background='#f97316';}
-  else if(elapsed>=limit*.8){state.textContent='wrap up';dot.style.background='#f59e0b';}
+  else if(elapsed>=limit*.8){state.textContent='đang tổng kết';dot.style.background='#f59e0b';}
   else{state.textContent='ổn';dot.style.background='#10b981';}
 }
 RT.interval(renderUi,CFG.tickMs);

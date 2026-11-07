@@ -84,7 +84,7 @@ function hash(value) {
 function notice(title, text) {
   try { GM_notification?.({ title, text, timeout: 9000 }); } catch (_) {}
 }
-function ghostStatus() { return norm(q('#gitl9 .status')?.innerText || ''); }
+function ghostStatus() { const e=q('#gitl9 .status'); return norm(e?.dataset?.ghostCode ? e.dataset.ghostCode+' '+(e.dataset.ghostDetail||'') : e?.innerText||''); }
 function ghostPaused() { return /^PAUSED\b/i.test(ghostStatus()); }
 function ghostUncertain() { return /PLAY-SEND-(UNCERTAIN|THREW)|UNCERTAIN/i.test(ghostStatus()); }
 function ghostStop() { return q('#gitl9 [data-a="stop"]'); }
@@ -366,7 +366,7 @@ function explicitFailureExhausted(snap,verdict){
   clearManagedRecoveryDraft(snap);
   S.recoveryAttempt=null;
   const type=snap?.error?.type||verdict?.error?.type||'RECOVERY_SEND_FAILED';
-  const msg=`${type} đã được xác nhận là recovery send FAILED; retry 1/1 cũng failed rõ ràng. Không nâng HUMAN và không resend thêm trong fault episode này.`;
+  const msg=`${type}: đã xác nhận lần gửi khôi phục thất bại; lần thử lại duy nhất cũng thất bại. Không yêu cầu người dùng chỉ vì lỗi đã rõ, không tự gửi lại trong sự cố này.`;
   renderWebState(snap,msg);
   signal(type,'warning','Ghost+ web supervisor',msg,{group:'web-recovery',reason:snap?.error?.text||msg,evidence:verdict?.evidence});
   notice('Ghost+ web supervisor',msg);
@@ -426,13 +426,14 @@ function renderWebState(snap = faultSnapshot(), text = '') {
   const stateEl = q('[data-web-state]', host), detailEl = q('[data-web-detail]', host);
   if (!snap.active) {
     stateEl.textContent = 'không'; stateEl.style.color = '#64748b';
-    detailEl.textContent = text || '';
+    detailEl.textContent=window.__ghostPlusI18n?.display?.(text||'')??(text||'');
     return;
   }
   const type = snap.error.type || 'PLAY_SEND_UNCERTAIN';
-  stateEl.textContent = S.recovering ? `đang khôi phục · ${type}` : type;
+  const humanType=window.__ghostPlusI18n?.display?.(type)??type;
+  stateEl.textContent=S.recovering?`đang khôi phục · ${humanType}`:humanType;
   stateEl.style.color = snap.blockedType ? '#b45309' : '#b91c1c';
-  detailEl.textContent = text || snap.error.text || snap.status;
+  const message=text||snap.error.text||snap.status;detailEl.textContent=window.__ghostPlusI18n?.display?.(message)??message;
   detailEl.title = detailEl.textContent;
 }
 
@@ -685,7 +686,7 @@ async function sendRecoveryProbe(snap) {
         if(observeActiveRecovery(snap,attempt))return;
         requireHuman(
           snap,
-          'Recovery retry không được xác nhận và evidence không còn chứng minh send FAILED. Outcome thật sự uncertain; cần kiểm tra thủ công.',
+          'Chưa xác nhận lần thử khôi phục và bằng chứng không đủ kết luận gửi thất bại. Kết quả chưa rõ; cần kiểm tra thủ công.',
           {source:'web-recovery',transient:'WEB_SEND_UNCERTAIN',autoReconcile:true,baselineUsers:beforeUsers,baselineAssistants:beforeAssistants,baselineAssistantHash:attempt.beforeAssistantHash,faultKey:snap.key}
         );
         return;
@@ -697,7 +698,7 @@ async function sendRecoveryProbe(snap) {
       if(observeActiveRecovery(snap,attempt))return;
       requireHuman(
         snap,
-        'Status probe không được xác nhận và không đủ bằng chứng chứng minh send FAILED. Outcome thật sự uncertain; cần kiểm tra thủ công.',
+        'Chưa xác nhận yêu cầu kiểm tra và chưa có bằng chứng gửi thất bại. Kết quả chưa rõ; cần kiểm tra thủ công.',
         {source:'web-recovery',transient:'WEB_SEND_UNCERTAIN',autoReconcile:true,baselineUsers:beforeUsers,baselineAssistants:beforeAssistants,baselineAssistantHash:attempt.beforeAssistantHash,faultKey:snap.key}
       );
       return;
@@ -709,7 +710,7 @@ async function sendRecoveryProbe(snap) {
   const correction = String(GM_getValue(K.correction, '') || '').trim();
   if (correction) GM_setValue(K.correction, '');
   renderWebState(snap, 'Đã gửi status probe mới. Không click nút Thử lại của request cũ.');
-  notice('Ghost+ web supervisor', 'Đã gửi status probe để reconcile trạng thái hiện tại.');
+  notice('Ghost+ web supervisor', 'Đã gửi yêu cầu kiểm tra để đối chiếu trạng thái hiện tại.');
   S.recovering = false;
 }
 
@@ -730,7 +731,7 @@ function sample() {
 
   if (operatorLocked()) {
     S.recovering = false;
-    renderWebState(snap, 'Operator Gate đang LOCKED; Web Recovery ngủ.');
+    renderWebState(snap, 'Operator Gate đang LOCKED; Khôi phục kết nối đang tạm nghỉ.');
     return;
   }
 

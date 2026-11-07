@@ -114,7 +114,7 @@ const S = {
 GM_setValue(K.timeout, S.timeout);
 
 function panel() { return q('#gitl9'); }
-function ghostStatus() { return norm(q('#gitl9 .status')?.innerText || ''); }
+function ghostStatus() { const e=q('#gitl9 .status'); return norm(e?.dataset?.ghostCode ? e.dataset.ghostCode+' '+(e.dataset.ghostDetail||'') : e?.innerText||''); }
 function ghostRunning() { return /^RUNNING\b/i.test(ghostStatus()); }
 function ghostUncertain() { return /UNCERTAIN/i.test(ghostStatus()); }
 function operatorLocked() { return !!window.__ghostPlusSupervisor?.isLocked?.(); }
@@ -500,7 +500,7 @@ async function recover(snap,{allowStopped=false,source='idle'}={}) {
   if (webErrorActive() || contextBoundaryActive()) return;
   const key = recoveryKey(fresh);
   if (key === S.lastRecoveryKey) {
-    notice('Ghost+ watchdog', 'Trạng thái idle chưa thay đổi sau lần recovery trước. Không retry cùng outcome.');
+    notice('Ghost+ watchdog', 'Trạng thái nghỉ không thay đổi sau lần khôi phục trước. Không thử lại cùng một kết quả.');
     S.suspectAt = now(); return;
   }
   if (S.recoveryCount >= S.recoveryBudget) {
@@ -530,14 +530,14 @@ async function recover(snap,{allowStopped=false,source='idle'}={}) {
 
   if (detectBusyState().busy) {
     S.recovering = false;
-    notice('Ghost+ watchdog', 'ChatGPT vừa quay lại trạng thái BUSY. Hủy recovery, không gửi probe.');
+    notice('Ghost+ watchdog', 'ChatGPT vừa tiếp tục xử lý. Hủy khôi phục, không gửi yêu cầu kiểm tra.');
     return;
   }
 
   const prompt=recoveryPrompt();
   if (!await setComposerText(prompt) || !RT.alive()) {
     S.recovering = false;
-    notice('Ghost+ watchdog', 'Không stage được recovery status probe. Không gửi.');
+    notice('Ghost+ watchdog', 'Không chuẩn bị được yêu cầu kiểm tra khôi phục. Không gửi.');
     return;
   }
 
@@ -561,13 +561,13 @@ async function recover(snap,{allowStopped=false,source='idle'}={}) {
   if(!visible(livePlay)){
     await window.__ghostPlusRuntime?.dom?.clearComposerIfExact?.(prompt,RT,{verifyMs:1200});
     S.recovering=false;
-    notice('Ghost+ watchdog','Nút Play mới không còn khả dụng sau Stop; đã hủy recovery probe an toàn.');
+    notice('Ghost+ watchdog','Nút Chạy mới không khả dụng sau khi Dừng; đã hủy yêu cầu kiểm tra khôi phục an toàn.');
     return;
   }
   try { livePlay.click(); } catch (e) {
     await window.__ghostPlusRuntime?.dom?.clearComposerIfExact?.(prompt,RT,{verifyMs:1200});
     S.recovering = false;
-    notice('Ghost+ watchdog', 'Không khởi động lại Ghost; đã hủy recovery probe an toàn: ' + String(e?.message || e));
+    notice('Ghost+ watchdog', 'Không thể khởi động lại Ghost; đã hủy yêu cầu kiểm tra khôi phục an toàn: ' + String(e?.message || e));
     return;
   }
 
@@ -592,7 +592,7 @@ async function recover(snap,{allowStopped=false,source='idle'}={}) {
     const input = q('#ghostplus-watch [data-correction]'); if (input) input.value = '';
   }
   S.lastProgressAt = now(); S.suspectAt = 0; S.recovering = false;
-  notice('Ghost+ watchdog', source==='lease' ? 'Continuity lease đã nối task bằng status probe an toàn.' : 'Đã gửi recovery status probe sau khi xác nhận ChatGPT không còn BUSY.');
+  notice('Ghost+ watchdog', source==='lease' ? 'Đã duy trì tác vụ bằng yêu cầu kiểm tra trạng thái an toàn.' : 'Đã gửi yêu cầu kiểm tra khôi phục sau khi xác nhận ChatGPT không còn xử lý.');
 }
 
 function continuityEligible(snap){
@@ -650,15 +650,15 @@ function controls() {
   if (!w) {
     w = document.createElement('div'); w.id = 'ghostplus-watch';
     w.innerHTML = `
-      <div class="r"><span><span class="gp-dot"></span><b>Theo dõi</b> <span data-state>đang nghỉ</span></span><span data-clock>00:00</span></div>
+      <div class="r"><span><span class="gp-dot"></span><b>Bộ theo dõi</b> <span data-state>đang nghỉ</span></span><span data-clock>00:00</span></div>
       <div class="r" style="margin-top:4px">
         <select data-time><option value="0">Tắt</option><option value="180">3 phút</option><option value="300">5 phút</option><option value="600">10 phút</option><option value="900">15 phút</option><option value="1500">25 phút</option></select>
         <select data-budget title="Số lần khôi phục liên tiếp"><option value="1">1 lần</option><option value="2">2 lần</option><option value="3">3 lần</option></select>
       </div>
-      <div class="r" style="margin-top:4px"><label><input data-auto type="checkbox"> tự khôi phục khi IDLE</label><span style="color:#64748b">BUSY = không can thiệp</span></div>
-      <div class="r" style="margin-top:3px;color:#64748b"><span>Continuity lease</span><span data-lease>— / 25m</span></div>
+      <div class="r" style="margin-top:4px"><label><input data-auto type="checkbox"> tự khôi phục khi ChatGPT đang nghỉ</label><span style="color:#64748b">Đang xử lý = không can thiệp</span></div>
+      <div class="r" style="margin-top:3px;color:#64748b"><span>Thời hạn duy trì tác vụ</span><span data-lease>— / 25 phút</span></div>
       <div id="ghostplus-busy-detail"></div>
-      <div id="ghostplus-correction"><input data-correction type="text" placeholder="Yêu cầu ưu tiên ở lần recovery kế tiếp"><button data-save-correction>Lưu</button></div>`;
+      <div id="ghostplus-correction"><input data-correction type="text" placeholder="Yêu cầu ưu tiên cho lần khôi phục tiếp theo"><button data-save-correction>Lưu</button></div>`;
     document.documentElement.appendChild(w);RT.node(w);
     const timeout = q('[data-time]', w), budget = q('[data-budget]', w), auto = q('[data-auto]', w);
     timeout.value = String(S.timeout); budget.value = String(S.recoveryBudget); auto.checked = S.auto;
@@ -705,15 +705,15 @@ function render(snap = captureSnapshot()) {
   dot.className='gp-dot';
   if(leaseEl){
     const ls=leaseStartedAt(),remaining=leaseRemaining();
-    leaseEl.textContent=ls?(remaining?fmt(remaining)+' / 25m':'due · chờ safe IDLE'):'— / 25m';
+    leaseEl.textContent=ls?(remaining?fmt(remaining)+' / 25m':'due · chờ safe IDLE'):'— / 25 phút';
   }
   const elapsedSinceProgress = Math.max(0, now() - S.lastProgressAt);
   if (snap.busy.busy) {
     state.textContent = 'ĐANG THỰC THI'; dot.classList.add('busy');
     clock.textContent = S.busySince ? fmt(now()-S.busySince) : fmt(elapsedSinceProgress);
-    detail.textContent = `Watchdog khóa · ${snap.busy.reasons.join(' · ') || 'busy confirmed'}`;
+    detail.textContent = `Bộ theo dõi không can thiệp · ${snap.busy.reasons.join(' · ') || 'đã xác nhận đang xử lý'}`;
   } else if (S.recovering) {
-    state.textContent='đang khôi phục'; dot.classList.add('bad'); clock.textContent=fmt(elapsedSinceProgress); detail.textContent='Đang gửi status probe sau IDLE xác nhận.';
+    state.textContent='đang khôi phục'; dot.classList.add('bad'); clock.textContent=fmt(elapsedSinceProgress); detail.textContent='Đang gửi yêu cầu kiểm tra sau khi xác nhận ChatGPT đã nghỉ.';
   } else if (!ghostRunning()) {
     state.textContent='đang nghỉ'; clock.textContent='00:00'; detail.textContent='';
   } else if (S.idleSince && now()-S.idleSince < CFG.settleMs) {
@@ -723,11 +723,11 @@ function render(snap = captureSnapshot()) {
   } else {
     const idle = Math.max(0, now() - Math.max(S.lastProgressAt, S.idleSince || 0));
     clock.textContent=fmt(idle);
-    if (idle >= S.timeout*1000) { state.textContent='IDLE nghi treo'; dot.classList.add('warn'); detail.textContent=`Không có BUSY evidence trong ${fmt(idle)}.`; }
-    else { state.textContent=`ổn định · recovery ${S.recoveryCount}/${S.recoveryBudget}`; dot.classList.add('ok'); detail.textContent=`IDLE watchdog ${fmt(idle)} / ${Math.round(S.timeout/60)}m`; }
+    if (idle >= S.timeout*1000) { state.textContent='đang nghỉ, nghi bị treo'; dot.classList.add('warn'); detail.textContent=`Không thấy dấu hiệu ChatGPT đang xử lý trong ${fmt(idle)}.`; }
+    else { state.textContent=`ổn định · đã khôi phục ${S.recoveryCount}/${S.recoveryBudget}`; dot.classList.add('ok'); detail.textContent=`Theo dõi lúc nghỉ ${fmt(idle)} / ${Math.round(S.timeout/60)}m`; }
   }
   m.className = snap.busy.busy ? 'busy' : ghostRunning() ? 'run' : '';
-  m.title = `Ghost · ${ghostStatus()||'waiting'} · ${snap.busy.busy ? 'BUSY' : 'IDLE'}`;
+  m.title = `Ghost · ${window.__ghostPlusI18n?.display?.(ghostStatus().split(' ')[0])||ghostStatus()||'đang chờ'} · ${snap.busy.busy ? 'ChatGPT đang xử lý' : 'ChatGPT đang nghỉ'}`;
 }
 
 function sample() {
@@ -745,7 +745,7 @@ function sample() {
       if (stale >= CFG.staleBusyWarnMs && !S.stallEpisodeNotified) {
         S.staleBusyNotifiedAt = now();
         S.stallEpisodeNotified = true;
-        const msg = `Ghost đang RUNNING; ChatGPT vẫn báo BUSY nhưng ${Math.round(stale/60000)} phút chưa có meaningful progress. Chỉ cảnh báo một lần cho stall episode này, không Stop/recovery.`;
+        const msg=`Ghost đang chạy; ChatGPT vẫn xử lý nhưng ${Math.round(stale/60000)} phút chưa có tiến triển rõ ràng. Chỉ cảnh báo một lần cho lần nghi treo này, không dừng hoặc khôi phục.`;
         const eventId=`stall:${S.runId}:${recoveryKey(snap)}`;
         signal('STALL_WARNING', 'warning', 'Ghost+ watchdog', msg, {
           id:eventId, group:'stall', reason:msg,
@@ -774,14 +774,14 @@ function sample() {
 
   if (!S.suspectAt) {
     S.suspectAt = now();
-    notice('Ghost+ watchdog', `Không còn BUSY evidence và đã IDLE ${Math.round(idle/1000)}s. Bắt đầu grace ${Math.round(CFG.graceMs/1000)}s.`);
+    notice('Ghost+ watchdog', `Không thấy dấu hiệu ChatGPT đang xử lý trong ${Math.round(idle/1000)} giây. Bắt đầu thời gian đệm ${Math.round(CFG.graceMs/1000)} giây.`);
     render(snap); return;
   }
 
   if (now()-S.suspectAt >= CFG.graceMs) {
     if (!S.auto) {
       S.suspectAt = now();
-      notice('Ghost+ watchdog', 'ChatGPT có vẻ IDLE/stalled. Tự khôi phục đang tắt.');
+      notice('Ghost+ watchdog', 'ChatGPT có vẻ đang nghỉ hoặc bị treo. Tự khôi phục đang tắt.');
     } else {
       recover(snap).catch(e => { S.recovering=false; notice('Ghost+ watchdog error', String(e?.message||e)); });
     }

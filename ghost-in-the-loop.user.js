@@ -18,6 +18,7 @@
 (() => {
 'use strict';
 const RT=window.__ghostPlusRuntime?.module('core');if(!RT)return;
+const vi=s=>window.__ghostPlusI18n?.display?.(s)??String(s??'');
 if (window.__GITL_V9__ === true) return;
 if (window.__GITL_V9_BOOTING__ && Date.now() - window.__GITL_V9_BOOTING__ < 15000) return;
 window.__GITL_V9_BOOTING__ = Date.now();
@@ -886,8 +887,8 @@ async function captureExport() {
   return { version: VER, platform: HOST.id, capturedAt: new Date().toISOString(), source: 'dom', partial: true, turns: dom };
 }
 function markdown(cap) {
-  const lines = ['# Ghost conversation export', '', `- Platform: ${cap.platform}`, `- Captured: ${cap.capturedAt}`, `- Source: ${cap.source}${cap.partial ? ' (partial)' : ''}`, ''];
-  cap.turns.forEach((turn, i) => { lines.push(`## ${i + 1}. ${turn.role === 'user' ? 'User' : 'Assistant'}`, '', turn.text, ''); });
+  const lines = ['# Dữ liệu cuộc trò chuyện Ghost', '', `- Nền tảng: ${cap.platform}`, `- Thời điểm lưu: ${cap.capturedAt}`, `- Nguồn: ${cap.source}${cap.partial ? ' (chưa đầy đủ)' : ''}`, ''];
+  cap.turns.forEach((turn, i) => { lines.push(`## ${i + 1}. ${turn.role === 'user' ? 'Người dùng' : 'Trợ lý'}`, '', turn.text, ''); });
   return lines.join('\n');
 }
 function download(name, text, type) {
@@ -945,23 +946,23 @@ function render() {
   const scrollDebugActive=document.documentElement.dataset.ghostScrollDiagActive==='1';
   panel.innerHTML = trustedHTML(`
     <div class="head"><span class="brand">👻 GHOST <span class="brandver">· v${esc(runtimeVersion||'?')}${scrollDebugActive?' · DBG':''}</span></span><span class="meta">${esc(HOST.id)}</span></div>
-    <div class="tabs"><button data-tab="play" class="${S.tab==='play'?'on':''}">Play</button><button data-tab="aoa" class="${S.tab==='aoa'?'on':''}">AoA</button><button data-tab="export" class="${S.tab==='export'?'on':''}">Export</button></div>
-    <div class="status"><b>${esc(S.mode)}</b> · round ${S.round}/${S.max}<br>${esc(S.detail)}</div>
+    <div class="tabs"><button data-tab="play" class="${S.tab==='play'?'on':''}">${esc(vi('Play'))}</button><button data-tab="aoa" class="${S.tab==='aoa'?'on':''}">AoA</button><button data-tab="export" class="${S.tab==='export'?'on':''}">${esc(vi('Export'))}</button></div>
+    <div class="status" data-ghost-code="${esc(S.mode)}" data-ghost-detail="${esc(S.detail)}"><b>${esc(vi(S.mode))}</b> · ${esc(vi('round'))} ${S.round}/${S.max}<br>${esc(vi(S.detail))}</div>
     <div class="pane ${S.tab==='play'?'show':''}" data-pane="play">
-      <div class="row"><button class="on" data-a="play">▶ Play</button><button class="stop" data-a="stop">■ Stop</button><button data-a="reload">↻ Page</button></div>
+      <div class="row"><button class="on" data-a="play">▶ ${esc(vi('Play'))}</button><button class="stop" data-a="stop">■ ${esc(vi('Stop'))}</button><button data-a="reload">↻ ${esc(vi('Page'))}</button></div>
       <div class="row" style="margin-top:5px"><input data-max type="number" min="1" max="100" value="${S.max}"></div>
-      <div class="tiny">Core only: final control line → one Send → repeat. No automatic resend after an uncertain Send.</div>
-      <div class="tiny" data-runtime>runtime G${rd?.generation||'?'} · resources ${rtCount}</div>
+      <div class="tiny">${esc(vi('Core only: final control line → one Send → repeat. No automatic resend after an uncertain Send.'))}</div>
+      <div class="tiny" data-runtime>${esc(vi('runtime'))} G${rd?.generation||'?'} · ${esc(vi('resources'))} ${rtCount}</div>
     </div>
     <div class="pane ${S.tab==='aoa'?'show':''}" data-pane="aoa">
-      <div class="grid">${Object.entries(ACT).map(([k,v])=>`<label><input type="checkbox" data-act="${k}" ${ON[k]?'checked':''}>${esc(v[0])}</label>`).join('')}</div>
-      <div class="tiny">Optional protocols stay external. Ghost points the AI to their canonical source; Play transport does not change.</div>
-      <input data-custom type="text" placeholder="AoA path, e.g. personas/compass.md" value="${esc(custom)}" style="margin-top:6px">
+      <div class="grid">${Object.entries(ACT).map(([k,v])=>`<label><input type="checkbox" data-act="${k}" ${ON[k]?'checked':''}>${esc(vi(v[0]))}</label>`).join('')}</div>
+      <div class="tiny">${esc(vi('Optional protocols stay external. Ghost points the AI to their canonical source; Play transport does not change.'))}</div>
+      <input data-custom type="text" placeholder="Đường dẫn AoA, ví dụ: personas/compass.md" value="${esc(custom)}" style="margin-top:6px">
     </div>
     <div class="pane ${S.tab==='export'?'show':''}" data-pane="export">
-      <div class="row"><button data-a="copy">Copy MD</button><button data-a="md">Save MD</button><button data-a="json">Save JSON</button></div>
-      <div class="row" style="margin-top:5px"><button data-a="report">Copy diagnostic report</button></div>
-      <div class="tiny">API-first where supported; DOM fallback is explicitly marked partial.</div>
+      <div class="row"><button data-a="copy">${esc(vi('Copy MD'))}</button><button data-a="md">${esc(vi('Save MD'))}</button><button data-a="json">${esc(vi('Save JSON'))}</button></div>
+      <div class="row" style="margin-top:5px"><button data-a="report">${esc(vi('Copy diagnostic report'))}</button></div>
+      <div class="tiny">${esc(vi('API-first where supported; DOM fallback is explicitly marked partial.'))}</div>
     </div>`);
 
 }

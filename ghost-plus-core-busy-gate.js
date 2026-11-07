@@ -13,7 +13,7 @@ const visible = el => !!el && el.isConnected && !el.disabled && el.getAttribute(
 const PENDING_RE = /(đang\s+(suy nghĩ|truy vấn|tìm|phân tích|xử lý|tải|chạy|gọi|thực thi|duyệt))|\b(thinking|searching|querying|analyzing|processing|working|running|retrieving|calling\s+(a\s+)?tool|using\s+(a\s+)?tool|browsing|fetching)\b/i;
 
 function ghostNeedsGuard() {
-  const status = norm(q('#gitl9 .status')?.innerText || '');
+  const e=q('#gitl9 .status');const status=norm(e?.dataset?.ghostCode ? e.dataset.ghostCode+' '+(e.dataset.ghostDetail||'') : e?.innerText||'');
   return /^RUNNING\b/i.test(status) || (/^PAUSED\b/i.test(status) && /UNCERTAIN/i.test(status));
 }
 function nativeCoreStopVisible() {
